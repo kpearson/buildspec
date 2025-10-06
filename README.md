@@ -1,6 +1,7 @@
 # Buildspec Workflow Toolkit
 
-A comprehensive Claude Code workflow automation system that transforms planning documents into fully implemented features through autonomous agent execution.
+A comprehensive Claude Code workflow automation system that transforms planning
+documents into fully implemented features through autonomous agent execution.
 
 ## Installation
 
@@ -23,7 +24,8 @@ This installs:
 - ✅ Claude Code files via symlinks (agents, commands, scripts to `~/.claude/`)
 - ✅ All dependencies (typer, rich, tomli)
 
-After installation, run `buildspec init` to create your configuration file at `~/.config/buildspec/config.toml`.
+After installation, run `buildspec init` to create your configuration file at
+`~/.config/buildspec/config.toml`.
 
 ### Available Make Commands
 
