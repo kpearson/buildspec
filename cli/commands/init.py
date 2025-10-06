@@ -41,7 +41,8 @@ def command(
             Panel(
                 f"[yellow]Configuration already exists:[/yellow]\n"
                 f"{config.config_file}\n\n"
-                f"Use [bold]--force[/bold] to overwrite or [bold]--show[/bold] to view default config",
+                f"Use [bold]--force[/bold] to overwrite or "
+                f"[bold]--show[/bold] to view default config",
                 title="⚠️  Config Exists",
                 border_style="yellow",
             )
@@ -63,7 +64,8 @@ def command(
         # Success message
         console.print(
             Panel(
-                f"[green]✓[/green] Configuration created: [bold]{config_path}[/bold]\n\n"
+                f"[green]✓[/green] Configuration created: "
+                f"[bold]{config_path}[/bold]\n\n"
                 f"[dim]XDG directories created:[/dim]\n"
                 f"  • Config:    {dirs['config']}\n"
                 f"  • Templates: {dirs['templates']}\n"
@@ -84,7 +86,7 @@ def command(
 
     except FileExistsError as e:
         console.print(f"[red]ERROR:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except Exception as e:
         console.print(f"[red]ERROR:[/red] Failed to create configuration: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
