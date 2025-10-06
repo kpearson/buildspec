@@ -49,10 +49,11 @@ You are creating individual tickets from an epic file. Your task is to:
    - If validation fails, STOP and report the validation errors
    - Only proceed if all pre-flight checks pass
 
-1. Read the ticket template:
-   - Load template from: /Users/kit/Code/happyfamily/happyfamily-webui-claude/.claude/templates/planning-ticket-template.md
+1. Read the ticket template (if available):
+   - Check for template at: ~/.claude/templates/planning-ticket-template.md
+   - If template exists, use it as the base structure
+   - Otherwise, create tickets with standard markdown format
    - Understand the template structure and placeholder sections
-   - This template will be used to generate each ticket
 
 2. Read and parse the epic file at: [epic-file-path]
    - Extract the TOML configuration block

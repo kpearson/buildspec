@@ -17,7 +17,7 @@ color: red
 
 **STEP 1: VALIDATE INPUT**
 ```
-IMMEDIATELY call Bash tool: /Users/kit/.claude/scripts/epic-paths.sh [PLANNING_DOC_PATH]
+IMMEDIATELY call Bash tool: ~/.claude/scripts/epic-paths.sh [PLANNING_DOC_PATH]
 ```
 
 **STEP 2: READ PLANNING DOCUMENT**

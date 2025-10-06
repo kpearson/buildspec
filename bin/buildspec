@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Buildspec CLI executable entry point."""
+
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import cli package
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from cli.app import app
+except ImportError as e:
+    print(f"ERROR: Failed to import CLI package: {e}", file=sys.stderr)
+    print("Ensure cli/ package structure exists", file=sys.stderr)
+    sys.exit(1)
+
+if __name__ == "__main__":
+    app()

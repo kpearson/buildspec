@@ -30,7 +30,7 @@ fi
 echo "🔍 Validating epic creation for: $PLANNING_DOC_PATH" >&2
 
 # Run our validation script
-VALIDATION_OUTPUT=$(/Users/kit/.claude/scripts/epic-paths.sh "$PLANNING_DOC_PATH" 2>&1)
+VALIDATION_OUTPUT=$("$HOME/.claude/scripts/epic-paths.sh" "$PLANNING_DOC_PATH" 2>&1)
 
 # Check if validation passed
 if echo "$VALIDATION_OUTPUT" | grep -q "SPEC_EXISTS=false"; then

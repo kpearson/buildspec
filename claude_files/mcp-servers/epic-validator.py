@@ -19,8 +19,9 @@ def validate_epic_creation(planning_doc_path: str) -> dict:
 
     try:
         # Run the validation script
+        script_path = os.path.expanduser("~/.claude/scripts/epic-paths.sh")
         result = subprocess.run(
-            ["/Users/kit/.claude/scripts/epic-paths.sh", clean_path],
+            [script_path, clean_path],
             capture_output=True,
             text=True,
             check=False
