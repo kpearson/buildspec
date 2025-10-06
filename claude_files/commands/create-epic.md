@@ -10,45 +10,59 @@ Generate an executable epic file from a planning/specification document.
 
 ## Description
 
-This command reads a planning/specification document and generates a self-contained executable epic file that can be used with `/execute-epic`. The command analyzes the planning document to:
+This command reads a planning/specification document and generates a
+self-contained executable epic file that can be used with `/execute-epic`. The
+command analyzes the planning document to:
 
 - Extract the epic structure and requirements
 - Identify deliverable tickets from the breakdown sections
 - Determine dependencies between tickets based on the described layers/phases
-- Create the epic YAML file with proper dependency graph and inline ticket descriptions
+- Create the epic YAML file with proper dependency graph and inline ticket
+  descriptions
 
-**Important**: This command spawns a Task agent to analyze the planning document and generate the epic structure autonomously.
+**Important**: This command spawns a Task agent to analyze the planning document
+and generate the epic structure autonomously.
 
 ## Parameters
 
 - `<planning-doc-path>`: Path to the planning/specification document
-- `--output <epic-file-path>`: Output path for the generated epic file (defaults to `<spec-dir>/<epic-name>.epic.yaml`)
+- `--output <epic-file-path>`: Output path for the generated epic file (defaults
+  to `<spec-dir>/<epic-name>.epic.yaml`)
 
 ## Process Flow
 
 When you run this command:
 
-1. **Analyze Planning Document**: Task agent reads and understands the epic requirements
-2. **Extract Tickets**: Identifies all deliverable tickets from the "Related Issues" section
-3. **Determine Dependencies**: Maps layer/category relationships to ticket dependencies
-4. **Generate Epic File**: Creates self-contained epic YAML with dependency graph and inline ticket descriptions
+1. **Analyze Planning Document**: Task agent reads and understands the epic
+   requirements
+2. **Extract Tickets**: Identifies all deliverable tickets from the "Related
+   Issues" section
+3. **Determine Dependencies**: Maps layer/category relationships to ticket
+   dependencies
+4. **Generate Epic File**: Creates self-contained epic YAML with dependency
+   graph and inline ticket descriptions
 5. **Validate Structure**: Ensures epic file is valid and ready for execution
 
 ## Examples
 
 ### Basic epic creation
+
 ```
 /create-epic planning/user-auth-spec.md
 ```
+
 Outputs: `planning/user-auth.epic.yaml`
 
 ### Another example with different directory
+
 ```
 /create-epic docs/payment-system.md
 ```
+
 Outputs: `docs/payment-system.epic.yaml`
 
 ### Specify output location to override default
+
 ```
 /create-epic planning/payment-system.md --output epics/payment-system.yaml
 ```
@@ -66,7 +80,7 @@ When this command is invoked, main Claude will:
 
 Main Claude will provide these exact instructions to the Task agent:
 
-```
+````
 You are generating an executable epic from a planning/specification document. Your PRIMARY GOAL is to extract only the coordination essentials needed for ticket execution while filtering out implementation speculation and planning noise.
 
 COORDINATION-FOCUSED ANALYSIS:
@@ -170,7 +184,7 @@ COORDINATION-FOCUSED ANALYSIS:
        depends_on: [list-of-prerequisite-ticket-ids]
        critical: [true/false based on epic requirements]
        coordination_role: "[What this ticket provides for coordination]"
-   ```
+````
 
 5. Validate the generated epic:
    - Check for circular dependencies
@@ -179,8 +193,10 @@ COORDINATION-FOCUSED ANALYSIS:
    - Confirm epic file follows proper YAML structure
 
 6. Determine output path and generate epic file:
-   - Extract directory from planning document path (e.g., "planning/" from "planning/user-auth-spec.md")
-   - Generate epic filename from document name (e.g., "user-auth.epic.yaml" from "user-auth-spec.md")
+   - Extract directory from planning document path (e.g., "planning/" from
+     "planning/user-auth-spec.md")
+   - Generate epic filename from document name (e.g., "user-auth.epic.yaml" from
+     "user-auth-spec.md")
    - Create epic file in same directory as planning document
 
 7. Generate comprehensive report including:
@@ -191,34 +207,27 @@ COORDINATION-FOCUSED ANALYSIS:
 
 CRITICAL FILTERING GUIDELINES:
 
-INCLUDE (Coordination Essentials):
-✅ Function/method profiles with names, arity, and intent descriptions
-✅ Directory paths and file organization requirements
-✅ Architectural decisions affecting multiple tickets
-✅ Integration contracts and interface specifications
-✅ Shared patterns teams must follow consistently
-✅ Performance/security constraints that are non-negotiable
-✅ Backward compatibility requirements
-✅ Breaking changes that are prohibited
-✅ Technology choices that are locked in
-✅ Data flow patterns that affect coordination
-✅ Concrete APIs/services each ticket must provide
-✅ Specific dependencies between components
+INCLUDE (Coordination Essentials): ✅ Function/method profiles with names,
+arity, and intent descriptions ✅ Directory paths and file organization
+requirements ✅ Architectural decisions affecting multiple tickets ✅
+Integration contracts and interface specifications ✅ Shared patterns teams must
+follow consistently ✅ Performance/security constraints that are non-negotiable
+✅ Backward compatibility requirements ✅ Breaking changes that are prohibited
+✅ Technology choices that are locked in ✅ Data flow patterns that affect
+coordination ✅ Concrete APIs/services each ticket must provide ✅ Specific
+dependencies between components
 
-EXCLUDE (Implementation Noise):
-❌ Implementation speculation and pseudo-code
-❌ Planning discussions and brainstorming sessions
-❌ "We could" or "Maybe we should" statements
-❌ Detailed step-by-step implementation plans
-❌ Early iterations and exploratory ideas
-❌ Alternative approaches that were considered
-❌ Internal implementation details not affecting coordination
-❌ Development workflow discussions
-❌ Tooling preferences unless they affect coordination
+EXCLUDE (Implementation Noise): ❌ Implementation speculation and pseudo-code ❌
+Planning discussions and brainstorming sessions ❌ "We could" or "Maybe we
+should" statements ❌ Detailed step-by-step implementation plans ❌ Early
+iterations and exploratory ideas ❌ Alternative approaches that were considered
+❌ Internal implementation details not affecting coordination ❌ Development
+workflow discussions ❌ Tooling preferences unless they affect coordination
 
 COORDINATION-FOCUSED ANALYSIS:
 
 Epic Structure Mapping:
+
 - Epic title → epic field (core objective only)
 - Epic Summary → description field (coordination purpose only)
 - Firm Success Criteria → acceptance_criteria list (measurable only)
@@ -226,35 +235,48 @@ Epic Structure Mapping:
 - Architecture decisions → coordination_requirements sections
 
 Coordination Requirements Generation:
+
 - function_profiles: Extract method/function names with arity and intent
 - directory_structure: Capture required paths and organization patterns
 - breaking_changes_prohibited: Extract what must remain unchanged
 - shared_interfaces: Map required method signatures and contracts
 - performance_contracts: Extract non-negotiable performance bounds
 - security_constraints: Identify requirements affecting multiple tickets
-- architectural_decisions: Capture firm technical decisions with enhanced structure
+- architectural_decisions: Capture firm technical decisions with enhanced
+  structure
 - integration_contracts: Map concrete APIs and dependencies
 
 Dependency Logic (Focus on Coordination):
+
 - Same layer/category = can run in parallel (no coordination needed)
-- Sequential layers = later layers depend on coordination points from previous layers
+- Sequential layers = later layers depend on coordination points from previous
+  layers
 - Cross-layer dependencies = identify specific coordination interfaces needed
 - Infrastructure/setup tickets = usually provide coordination foundations
 - Integration tickets = usually coordinate between component tickets
 
 Ticket Coordination Role:
-- coordination_role: What this ticket provides for other tickets to coordinate with
+
+- coordination_role: What this ticket provides for other tickets to coordinate
+  with
 - Focus on APIs, interfaces, shared components, and integration points
 - NOT internal implementation details
 
 Output Structure:
-- Epic file: [spec-directory]/[epic-name].epic.yaml with coordination essentials and inline ticket descriptions
-  (created in the same directory as the planning document)
+
+- Epic file: [spec-directory]/[epic-name].epic.yaml with coordination essentials
+  and inline ticket descriptions (created in the same directory as the planning
+  document)
 - Clear dependency graph focused on coordination needs
 - Self-contained file with all ticket information inline
 
-Remember: Your goal is to extract the minimum coordination information needed for teams to work together effectively. Filter out all implementation speculation and focus only on what enables successful coordination. The epic file should be entirely self-contained with detailed ticket descriptions inline - no separate ticket files are created.
-```
+Remember: Your goal is to extract the minimum coordination information needed
+for teams to work together effectively. Filter out all implementation
+speculation and focus only on what enables successful coordination. The epic
+file should be entirely self-contained with detailed ticket descriptions
+inline - no separate ticket files are created.
+
+````
 
 ## Expected Output
 
@@ -402,19 +424,23 @@ tickets:
     depends_on: [jwt-token-service, mfa-integration]
     critical: true
     coordination_role: "Provides HTTP API that frontend components will consume"
-```
-
+````
 
 ## Integration with Other Commands
 
 The generated epic can be used with:
-- `/execute-epic planning/user-auth.epic.yaml`: Execute the generated epic (note: path matches spec directory)
-- `/create-tickets planning/user-auth.epic.yaml`: Generate individual ticket files from the epic descriptions
-- The epic file contains all ticket information inline - use create-tickets to later generate individual ticket files when needed
+
+- `/execute-epic planning/user-auth.epic.yaml`: Execute the generated epic
+  (note: path matches spec directory)
+- `/create-tickets planning/user-auth.epic.yaml`: Generate individual ticket
+  files from the epic descriptions
+- The epic file contains all ticket information inline - use create-tickets to
+  later generate individual ticket files when needed
 
 ## Best Practices
 
-1. **Coordination-Focused Planning**: Ensure your planning document clearly identifies:
+1. **Coordination-Focused Planning**: Ensure your planning document clearly
+   identifies:
    - What interfaces must remain unchanged (backward compatibility)
    - What APIs/services each component must provide
    - Performance and security constraints affecting multiple tickets
@@ -437,6 +463,7 @@ The generated epic can be used with:
 ## Error Handling
 
 The command handles:
+
 - Missing or invalid planning documents
 - Planning documents with insufficient coordination details
 - Circular dependency detection in ticket relationships
@@ -446,7 +473,8 @@ The command handles:
 
 ## Options
 
-- `--output <epic-file-path>`: Override default output location (default: same directory as spec file)
+- `--output <epic-file-path>`: Override default output location (default: same
+  directory as spec file)
 - `--dry-run`: Show what would be generated without creating files
 
 ## Related Commands
@@ -454,5 +482,6 @@ The command handles:
 - `/execute-epic`: Execute the generated coordination-focused epic file
 - `/create-tickets`: Generate individual ticket files from epic descriptions
 - `/execute-ticket`: Work on individual tickets generated from the epic
-- `/code-review`: Review ticket implementations against coordination requirements
+- `/code-review`: Review ticket implementations against coordination
+  requirements
 - `/validate-epic`: Validate epic file structure and coordination requirements

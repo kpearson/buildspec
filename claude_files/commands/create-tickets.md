@@ -10,13 +10,16 @@ Generate individual ticket files from an epic using the ticket template.
 
 ## Description
 
-This command reads an epic file and generates individual ticket markdown files based on the ticket template. Each ticket is populated with:
+This command reads an epic file and generates individual ticket markdown files
+based on the ticket template. Each ticket is populated with:
+
 - Epic context and goals
 - Specific task requirements
 - Proper dependency relationships
 - Architecture context from the epic
 
-**Important**: This command spawns a Task agent that creates comprehensive tickets with full epic context.
+**Important**: This command spawns a Task agent that creates comprehensive
+tickets with full epic context.
 
 ## Process Flow
 
@@ -158,7 +161,8 @@ IMPORTANT:
 
 ## Example Output
 
-After running the command, you'll get tickets at the paths specified in your epic TOML:
+After running the command, you'll get tickets at the paths specified in your
+epic TOML:
 
 ```
 tickets/
@@ -169,6 +173,7 @@ tickets/
 ```
 
 Each ticket will contain:
+
 - Fully populated planning-ticket-template structure
 - ALL placeholders replaced with specific content
 - Complete epic context and dependencies
@@ -180,6 +185,7 @@ Each ticket will contain:
 ## Integration with Other Commands
 
 The created tickets work seamlessly with:
+
 - `/execute-epic`: Reads the same ticket files for orchestration
 - `/execute-ticket`: Executes individual tickets with epic context
 - `/code-review`: Reviews ticket implementation with epic understanding
@@ -192,14 +198,17 @@ The created tickets work seamlessly with:
 
 ## Best Practices
 
-1. **Run after epic planning** - Ensure epic is complete before generating tickets
+1. **Run after epic planning** - Ensure epic is complete before generating
+   tickets
 2. **Review generated tickets** - Verify they capture your intent correctly
-3. **Customize as needed** - Generated tickets are starting points, refine as needed
+3. **Customize as needed** - Generated tickets are starting points, refine as
+   needed
 4. **Maintain consistency** - If you modify tickets, keep epic context accurate
 
 ## Error Handling
 
 The command handles:
+
 - Missing or invalid epic files
 - Malformed TOML configuration
 - Directory creation issues
@@ -212,3 +221,4 @@ The command handles:
 - `/execute-ticket`: Execute individual tickets
 - `/code-review`: Review ticket implementations
 - `/validate-epic`: Validate epic before ticket generation
+

@@ -6,7 +6,8 @@ from cli.commands import create_epic, create_tickets, execute_epic, execute_tick
 app = typer.Typer(
     name="buildspec",
     help="Headless CLI for buildspec workflows - enables non-interactive execution via Claude Code CLI",
-    add_completion=False
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]}
 )
 
 # Register commands

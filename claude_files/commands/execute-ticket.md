@@ -1,6 +1,7 @@
 # execute-ticket
 
-Execute a coding work ticket from a markdown file following the planning-ticket-template format.
+Execute a coding work ticket from a markdown file following the
+planning-ticket-template format.
 
 ## Usage
 
@@ -10,9 +11,12 @@ Execute a coding work ticket from a markdown file following the planning-ticket-
 
 ## Description
 
-This command reads a ticket file that follows the planning-ticket-template format and executes the implementation work described in it.
+This command reads a ticket file that follows the planning-ticket-template
+format and executes the implementation work described in it.
 
-**Important**: This command always spawns a Task agent for autonomous execution, ensuring the entire ticket is completed without interruption or permission prompts.
+**Important**: This command always spawns a Task agent for autonomous execution,
+ensuring the entire ticket is completed without interruption or permission
+prompts.
 
 The command will:
 
@@ -41,9 +45,11 @@ The command will:
 When you run this command from main Claude:
 
 1. **Spawn Task Agent**: Creates an autonomous agent to handle the entire ticket
-2. **Pre-flight Test Check**: Agent runs full test suite to ensure clean foundation - if any tests fail, ticket is blocked immediately
+2. **Pre-flight Test Check**: Agent runs full test suite to ensure clean
+   foundation - if any tests fail, ticket is blocked immediately
 3. **Parse Ticket**: Agent extracts all relevant information from the ticket
-4. **Plan Execution**: Agent creates a todo list based on the ticket requirements
+4. **Plan Execution**: Agent creates a todo list based on the ticket
+   requirements
 5. **Implement Changes**: Agent executes each file modification systematically
 6. **Add Tests**: Agent creates or updates tests as specified
 7. **Validate**: Agent runs tests and verifies acceptance criteria
@@ -52,23 +58,28 @@ When you run this command from main Claude:
 ## Examples
 
 ### Basic ticket execution
+
 ```
 /execute-ticket /path/to/tickets/implement-auth.md
 ```
 
 ### With specific base commit
+
 ```
 /execute-ticket /path/to/tickets/implement-auth.md --base-commit abc123
 ```
 
 ### With epic context
+
 ```
 /execute-ticket /path/to/tickets/implement-auth.md --epic /path/to/epics/user-management.md
 ```
 
 ## Requirements
 
-The ticket file must follow the planning-ticket-template format with sections for:
+The ticket file must follow the planning-ticket-template format with sections
+for:
+
 - Issue Summary
 - Story (As a/I want/So that)
 - Acceptance Criteria
@@ -81,7 +92,8 @@ The ticket file must follow the planning-ticket-template format with sections fo
 
 - `<ticket-file-path>`: Path to the ticket markdown file
 - `--base-commit <sha>`: Base commit to branch from (defaults to current HEAD)
-- `--epic <epic-path>`: Path to epic file for context about collaborating tickets and overall goals
+- `--epic <epic-path>`: Path to epic file for context about collaborating
+  tickets and overall goals
 
 ## Options
 
@@ -201,6 +213,7 @@ IMPORTANT:
 ## Error Handling
 
 The command will handle common issues:
+
 - Missing or invalid ticket file
 - Incomplete ticket information
 - File access errors

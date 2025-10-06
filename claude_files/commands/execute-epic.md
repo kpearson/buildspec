@@ -1,6 +1,7 @@
 # execute-epic
 
-Execute an entire epic containing multiple tickets, managing dependencies and parallel execution.
+Execute an entire epic containing multiple tickets, managing dependencies and
+parallel execution.
 
 ## Usage
 
@@ -11,16 +12,19 @@ Execute an entire epic containing multiple tickets, managing dependencies and pa
 ## Description
 
 This command orchestrates the execution of an entire epic by:
+
 - Understanding ticket dependencies and execution order
 - Running independent tickets in parallel
 - Ensuring each ticket completes successfully before running dependents
 - Validating the full test suite passes after all tickets complete
 
-**Important**: This command spawns a Task agent that manages multiple sub-agents for ticket execution, ensuring autonomous completion of the entire epic.
+**Important**: This command spawns a Task agent that manages multiple sub-agents
+for ticket execution, ensuring autonomous completion of the entire epic.
 
 ## Epic State File Structure
 
-The orchestrator creates an `artifacts/` directory alongside the epic file and maintains `artifacts/epic-state.json` to track all progress:
+The orchestrator creates an `artifacts/` directory alongside the epic file and
+maintains `artifacts/epic-state.json` to track all progress:
 
 ```json
 {
@@ -74,12 +78,14 @@ The orchestrator creates an `artifacts/` directory alongside the epic file and m
 ```
 
 **Simple approach:**
+
 - Each ticket creates one documentation file when complete
 - File named with ticket ID and final commit SHA
 - All artifacts committed at epic completion
 - `epic-state.json` tracks progress and dependencies
 
 The `epic-state.json` file serves as:
+
 - **Single source of truth** for epic progress
 - **Build artifact** showing complete execution history
 - **Resume capability** if epic execution is interrupted
@@ -90,6 +96,7 @@ The `epic-state.json` file serves as:
 The orchestrator implements an **epic branch with stacked tickets** approach:
 
 ### Epic Branch Structure
+
 ```bash
 main
 └── epic/user-auth-epic (created from main)
@@ -100,6 +107,7 @@ main
 ```
 
 ### No Dependencies
+
 ```bash
 # Tickets branch directly from epic branch baseline
 epic/user-auth-epic (ABC123)
@@ -108,6 +116,7 @@ epic/user-auth-epic (ABC123)
 ```
 
 ### Has Dependencies
+
 ```bash
 # Dependent tickets branch from dependency's final commit
 epic/user-auth-epic (ABC123)
@@ -119,6 +128,7 @@ epic/user-auth-epic (ABC123)
 ```
 
 ### PR Strategy
+
 1. **Epic PR**: `epic/user-auth-epic` → `main` (created at start, draft status)
 2. **Ticket PRs**: Sequential numbered PRs targeting epic branch:
    - `[1] Add auth base models` (ticket/auth-base → epic/user-auth-epic)
@@ -131,6 +141,7 @@ epic/user-auth-epic (ABC123)
    - Epic PR contains all artifacts showing development history
 
 **Key Rules:**
+
 - **Epic isolation**: All epic work happens on epic branch
 - **Stacked tickets**: Tickets build on dependencies within epic branch
 - **Clean integration**: Epic branch merges to main as complete feature
@@ -138,16 +149,20 @@ epic/user-auth-epic (ABC123)
 
 ## Epic File Format
 
-The epic file should contain a TOML configuration block defining the ticket dependency graph:
+The epic file should contain a TOML configuration block defining the ticket
+dependency graph:
 
 ### TOML Format (Embedded in Markdown)
-```markdown
+
+````markdown
 # Epic: [Epic Title]
 
 ## Epic Summary
+
 [Epic planning content...]
 
 ## Epic Configuration
+
 ```toml
 [epic]
 name = "[Epic Title]"
@@ -179,8 +194,10 @@ critical = false  # Epic continues even if this fails
 # Add as many tickets as needed with any dependency structure
 # The orchestrator handles any valid dependency graph
 ```
+````
 
 [Rest of epic planning content...]
+
 ```
 
 ## Execution Flow
@@ -208,7 +225,9 @@ When this command is invoked, main Claude will:
 Main Claude will provide these exact instructions to the Task agent:
 
 ```
-You are orchestrating an epic containing multiple coding tickets. Your task is to:
+
+You are orchestrating an epic containing multiple coding tickets. Your task is
+to:
 
 0. Run pre-flight validation:
    - Execute: bash ~/.claude/scripts/validate-epic.sh [epic-file-path]
@@ -237,50 +256,35 @@ You are orchestrating an epic containing multiple coding tickets. Your task is t
    - Determine execution order based on dependencies
    - Create a visual representation of the execution flow
 
-5. State file management:
+4. State file management:
    - Read/write epic-state.json from artifacts/ directory
    - Store ticket reports as flat files in artifacts/tickets/ directory
-   - epic-state.json structure:
-     {
-       "epic_id": "epic-name",
-       "baseline_commit": "abc123",
-       "status": "in-progress",
-       "started_at": "2024-01-01T10:00:00Z",
-       "tickets": {
-         "ticket-id": {
-           "path": "path/to/ticket.md",
-           "depends_on": ["other-ticket-id"],
-           "critical": true,
-           "status": "pending|in-progress|failed|completed",
-           "phase": "not-started|completed",
-           "git_info": {
-             "base_commit": "abc123",
-             "branch_name": "ticket/name",
-             "final_commit": "def456"
-           },
-           "started_at": "timestamp",
-           "completed_at": "timestamp"
-         }
-       }
-     }
+   - epic-state.json structure: { "epic_id": "epic-name", "baseline_commit":
+     "abc123", "status": "in-progress", "started_at": "2024-01-01T10:00:00Z",
+     "tickets": { "ticket-id": { "path": "path/to/ticket.md", "depends_on":
+     ["other-ticket-id"], "critical": true, "status":
+     "pending|in-progress|failed|completed", "phase": "not-started|completed",
+     "git_info": { "base_commit": "abc123", "branch_name": "ticket/name",
+     "final_commit": "def456" }, "started_at": "timestamp", "completed_at":
+     "timestamp" } } }
 
-6. Execution workflow for each ticket:
+5. Execution workflow for each ticket:
    - Simplified workflow: Execute ticket → phase becomes "completed"
    - No separate review/improvement phases in epic orchestration
    - Each ticket is responsible for its own quality assurance
 
-7. Task launching with base commit calculation:
+6. Task launching with base commit calculation:
 
    For tickets in "not-started" phase:
    - Determine base commit:
-     * No dependencies: use epic baseline_commit (epic branch HEAD)
-     * Single dependency: use dependency's git_info.final_commit
-     * Multiple dependencies: use most recent final_commit among dependencies
+     - No dependencies: use epic baseline_commit (epic branch HEAD)
+     - Single dependency: use dependency's git_info.final_commit
+     - Multiple dependencies: use most recent final_commit among dependencies
    - Launch: /execute-ticket <ticket-path> --base-commit <calculated-sha>
    - After completion: Update state with git_info and set phase to "completed"
    - Ticket will self-document to artifacts/tickets/<ticket-id>-<short-sha>.md
 
-8. Parallel execution rules:
+7. Parallel execution rules:
    - Tickets can run in parallel if their dependencies are in "completed" phase
    - Multiple tickets in different phases can run simultaneously
    - Track all running Tasks and wait for completion before updating state
@@ -295,30 +299,38 @@ You are orchestrating an epic containing multiple coding tickets. Your task is t
    - Epic execution summary (success/partial/failed)
    - Execution timeline showing parallel execution
    - Status of each ticket:
-     * ✅ Completed successfully
-     * ❌ Failed (with error details)
-     * ⏭️ Skipped (due to dependency failure)
+     - ✅ Completed successfully
+     - ❌ Failed (with error details)
+     - ⏭️ Skipped (due to dependency failure)
    - Acceptance criteria checklist
    - Total execution time
-   - Recommendations for follow-up actions (refactoring, additional tickets, etc.)
+   - Recommendations for follow-up actions (refactoring, additional tickets,
+     etc.)
 
 10. Finalize epic and create PRs:
-   - Add all artifacts/ directory contents to git
-   - Commit with message: "Add artifacts for <epic-name>"
-   - Push epic branch with artifacts: git push origin epic/<epic-name>
-   - Determine merge order based on dependency graph (topological sort)
-   - Create individual ticket PRs targeting epic branch:
-     * PR titles: "[1] Add auth base models", "[2] Implement auth API", "[3] Create auth UI"
-     * Command: gh pr create --base epic/<epic-name> --head ticket/<ticket-name> --title "[<sequence>] <ticket-title>"
-   - Update epic PR from draft to ready for review
-   - Epic PR description includes summary of all tickets with merge order
+
+- Add all artifacts/ directory contents to git
+- Commit with message: "Add artifacts for <epic-name>"
+- Push epic branch with artifacts: git push origin epic/<epic-name>
+- Determine merge order based on dependency graph (topological sort)
+- Create individual ticket PRs targeting epic branch:
+  - PR titles: "[1] Add auth base models", "[2] Implement auth API", "[3] Create
+    auth UI"
+  - Command: gh pr create --base epic/<epic-name> --head ticket/<ticket-name>
+    --title "[<sequence>] <ticket-title>"
+- Update epic PR from draft to ready for review
+- Epic PR description includes summary of all tickets with merge order
 
 IMPORTANT:
+
 - Create artifacts/ directory alongside the epic file for all build outputs
 - Maintain artifacts/epic-state.json as single source of truth for all progress
-- Save all ticket artifacts as flat files: artifacts/tickets/<ticket-id>-<short-sha>.md
-- Keep all artifacts LOCAL during epic execution (don't commit until epic complete)
-- At epic completion, commit all artifacts together with message "Add artifacts for <epic-name>"
+- Save all ticket artifacts as flat files:
+  artifacts/tickets/<ticket-id>-<short-sha>.md
+- Keep all artifacts LOCAL during epic execution (don't commit until epic
+  complete)
+- At epic completion, commit all artifacts together with message "Add artifacts
+  for <epic-name>"
 - Update state file after EVERY Task completion
 - Execute tickets in parallel whenever dependencies allow
 - Stop immediately if a critical ticket fails
@@ -326,21 +338,26 @@ IMPORTANT:
 - Each ticket goes through: execute → done (all quality checks included)
 - Code review is available as a separate command, not integrated into execution
 - Only start new tickets when their dependencies are in "completed" phase
-- Determine branch base commit from dependency final commits (for stacked branches)
+- Determine branch base commit from dependency final commits (for stacked
+  branches)
 - The epic succeeds only when ALL critical tickets reach "completed" phase
 - Provide epic-state.json as build artifact showing full execution history
 
 PARALLEL EXECUTION RULES:
+
 - Tickets with no dependencies start immediately in parallel
 - Tickets with the same dependencies run in parallel once dependencies are met
 - Use multiple Task agents simultaneously for parallel execution
 - Monitor all parallel agents and wait for completion before proceeding
 
-Example execution for tickets A, B (depends on A), C (depends on A), D (depends on B and C):
+Example execution for tickets A, B (depends on A), C (depends on A), D (depends
+on B and C):
+
 - Phase 1: Execute A
 - Phase 2: Execute B and C in parallel (both depend only on A)
 - Phase 3: Execute D (after both B and C complete)
-```
+
+````
 
 ## Options
 
@@ -364,9 +381,10 @@ tickets:
   - id: create-profile-ui
     path: tickets/profile-ui.md
     depends_on: [create-profile-api]
-```
+````
 
 ### Complex Parallel Epic
+
 ```yaml
 epic: "Payment System Integration"
 tickets:
@@ -406,6 +424,7 @@ tickets:
 ## Error Handling
 
 The orchestrator handles:
+
 - Missing or invalid epic files
 - Circular dependencies in tickets
 - Failed ticket execution
@@ -416,7 +435,8 @@ The orchestrator handles:
 ## Best Practices
 
 1. **Design epics carefully** - Consider dependencies and parallel opportunities
-2. **Mark critical tickets appropriately** - Only mark truly blocking tickets as critical
+2. **Mark critical tickets appropriately** - Only mark truly blocking tickets as
+   critical
 3. **Keep tickets focused** - Smaller tickets are easier to parallelize
 4. **Test incrementally** - Use phase validation to catch issues early
 5. **Plan for rollback** - Ensure tickets can be reverted if needed
@@ -424,6 +444,7 @@ The orchestrator handles:
 ## Monitoring
 
 During execution, the orchestrator provides:
+
 - Real-time status updates
 - Parallel execution visualization
 - Failure notifications
@@ -433,7 +454,8 @@ During execution, the orchestrator provides:
 ## Related Commands
 
 - `/execute-ticket`: Execute a single ticket (used internally by execute-epic)
-- `/code-review`: Standalone code review command (not integrated into epic execution)
+- `/code-review`: Standalone code review command (not integrated into epic
+  execution)
 - `/validate-epic`: Check epic file for issues before execution
 - `/visualize-epic`: Generate a dependency graph for the epic
 - `/epic-status`: Check status of a running epic execution

@@ -29,6 +29,7 @@ def command(
     project_dir: Optional[Path] = typer.Option(
         None,
         "--project-dir",
+        "-p",
         help="Project directory (default: auto-detect)"
     )
 ):

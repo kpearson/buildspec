@@ -1,40 +1,31 @@
 """Execute epic command implementation."""
 
-import typer
 from pathlib import Path
 from typing import Optional
+
+import typer
 from rich.console import Console
 
+from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
-from cli.core.claude import ClaudeRunner
 
 console = Console()
 
 
 def command(
     epic_file: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to epic YAML file"
+        ..., exists=True, file_okay=True, dir_okay=False, help="Path to epic YAML file"
     ),
     dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show execution plan without running"
+        False, "--dry-run", "-n", help="Show execution plan without running"
     ),
     no_parallel: bool = typer.Option(
-        False,
-        "--no-parallel",
-        help="Execute tickets sequentially"
+        False, "--no-parallel", "-s", help="Execute tickets sequentially"
     ),
     project_dir: Optional[Path] = typer.Option(
-        None,
-        "--project-dir",
-        help="Project directory (default: auto-detect)"
-    )
+        None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
+    ),
 ):
     """Execute entire epic with dependency management."""
     try:
@@ -51,9 +42,7 @@ def command(
         # Build prompt
         builder = PromptBuilder(context)
         prompt = builder.build_execute_epic(
-            epic_file=str(epic_file_resolved),
-            dry_run=dry_run,
-            no_parallel=no_parallel
+            epic_file=str(epic_file_resolved), dry_run=dry_run, no_parallel=no_parallel
         )
 
         # Print execution mode

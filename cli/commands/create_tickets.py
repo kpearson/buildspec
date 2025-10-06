@@ -1,35 +1,28 @@
 """Create tickets command implementation."""
 
-import typer
 from pathlib import Path
 from typing import Optional
+
+import typer
 from rich.console import Console
 
+from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
-from cli.core.claude import ClaudeRunner
 
 console = Console()
 
 
 def command(
     epic_file: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        help="Path to epic YAML file"
+        ..., exists=True, file_okay=True, dir_okay=False, help="Path to epic YAML file"
     ),
     output_dir: Optional[Path] = typer.Option(
-        None,
-        "--output-dir",
-        help="Override default tickets directory"
+        None, "--output-dir", "-d", help="Override default tickets directory"
     ),
     project_dir: Optional[Path] = typer.Option(
-        None,
-        "--project-dir",
-        help="Project directory (default: auto-detect)"
-    )
+        None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
+    ),
 ):
     """Create ticket files from epic definition."""
     try:
@@ -47,7 +40,7 @@ def command(
         builder = PromptBuilder(context)
         prompt = builder.build_create_tickets(
             epic_file=str(epic_file_resolved),
-            output_dir=str(output_dir) if output_dir else None
+            output_dir=str(output_dir) if output_dir else None,
         )
 
         # Print action
