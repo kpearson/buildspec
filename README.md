@@ -5,25 +5,54 @@ documents into fully implemented features through autonomous agent execution.
 
 ## Installation
 
-### Quick Start
+### Recommended: Standalone Binary (No Python Dependency)
+
+The standalone binary works in **any project** regardless of Python version:
 
 ```bash
-# Clone the repository (anywhere on your system)
+# Clone the repository
 git clone https://github.com/you/buildspec.git ~/tools/buildspec
 cd ~/tools/buildspec
 
-# Install the toolkit
+# Build and install standalone binary
+make install-binary
+
+# Initialize configuration
+buildspec init
+```
+
+**Benefits:**
+- ✅ Works in projects using Python 2.7, 3.x, Node.js, Go, Rust, etc.
+- ✅ No version conflicts with project Python environments
+- ✅ No asdf/mise version warnings
+- ✅ Single ~9MB executable with all dependencies bundled
+
+This installs:
+- ✅ Standalone `buildspec` binary to `~/.local/bin/buildspec`
+- ✅ Claude Code files via symlinks (agents, commands, scripts to `~/.claude/`)
+
+### Alternative: Pip Install (Requires Python 3.8+)
+
+For development or if you prefer pip:
+
+```bash
+# Clone the repository
+git clone https://github.com/you/buildspec.git ~/tools/buildspec
+cd ~/tools/buildspec
+
+# Install via pip (editable mode)
 make install
 
-# Initialize configuration (optional but recommended)
+# Initialize configuration
 buildspec init
 ```
 
 This installs:
-
 - ✅ `buildspec` CLI command via pip (to `~/.local/bin/buildspec`)
 - ✅ Claude Code files via symlinks (agents, commands, scripts to `~/.claude/`)
 - ✅ All dependencies (typer, rich, tomli)
+
+**Note:** Pip installation couples buildspec to your Python environment. Use standalone binary for true portability.
 
 After installation, run `buildspec init` to create your configuration file at
 `~/.config/buildspec/config.toml`.
@@ -31,23 +60,24 @@ After installation, run `buildspec init` to create your configuration file at
 ### Available Make Commands
 
 ```bash
-make install      # Install buildspec CLI and Claude Code files
-make uninstall    # Remove buildspec CLI and Claude Code files
-make reinstall    # Uninstall and reinstall buildspec
-make test         # Test the CLI installation
-make help         # Show available commands
+make build           # Build standalone binary with PyInstaller
+make install-binary  # Build and install standalone binary (recommended)
+make install         # Install buildspec CLI via pip (editable mode)
+make uninstall       # Remove buildspec CLI and Claude Code files
+make reinstall       # Uninstall and reinstall buildspec (pip)
+make clean           # Remove build artifacts
+make test            # Test the CLI installation
+make help            # Show available commands
 ```
 
 ### What Gets Installed
 
-**CLI Binary (via pip):**
+**Standalone Binary (via make install-binary):**
 
 ```bash
-# Pip creates:
-~/.local/bin/buildspec
-
-# Points to your cloned repo (editable install)
-# Changes to ~/tools/buildspec/cli/ apply instantly!
+~/.local/bin/buildspec  # Self-contained executable (~9MB)
+                        # Includes Python runtime + all dependencies
+                        # Works in any project, any Python version
 ```
 
 **Claude Code Files (via symlinks):**
@@ -59,6 +89,15 @@ make help         # Show available commands
 ├── scripts/          → ~/tools/buildspec/claude_files/scripts/
 ├── hooks/            → ~/tools/buildspec/claude_files/hooks/
 └── mcp-servers/      → ~/tools/buildspec/claude_files/mcp-servers/
+```
+
+**Pip Install Alternative:**
+
+```bash
+# Pip creates:
+~/.local/bin/buildspec  # Points to your Python environment
+
+# Editable install - changes to ~/tools/buildspec/cli/ apply instantly!
 ```
 
 ## Configuration
