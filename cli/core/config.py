@@ -3,7 +3,6 @@
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Use tomllib for Python 3.11+, tomli for earlier versions
 if sys.version_info >= (3, 11):

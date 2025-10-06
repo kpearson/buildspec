@@ -1,6 +1,5 @@
 """Prompt construction for Claude CLI invocation."""
 
-from pathlib import Path
 from typing import Optional
 
 from cli.core.context import ProjectContext
@@ -54,24 +53,36 @@ class PromptBuilder:
         Returns:
             Complete prompt string for Claude CLI execution
         """
-        command_instructions = self._read_command("create-epic")
-
+        command_file = self.context.claude_dir / "commands" / "create-epic.md"
         output_spec = output if output else "auto-generated based on planning doc name"
 
-        prompt = f"""{command_instructions}
+        prompt = f"""Read {command_file} and execute the Task Agent Instructions.
+
+CRITICAL: You MUST use the Task tool to spawn a sub-agent for this work.
+- Use Task tool with subagent_type: "general-purpose"
+- Pass the Task Agent Instructions from the command file to the sub-agent
+- DO NOT execute this work inline in your context
+- Sub-agents preserve your context window
+
+Planning document: {planning_doc}
+Output epic file: {output_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
-- Read planning document: {planning_doc}
-- Generate epic file at: {output_spec}
-- Report created epic file path when complete
+- The Task agent will read the planning document
+- The Task agent will generate the epic YAML file
+- The Task agent will report the created epic file path
 - No interactive prompts or confirmations
+
+IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
+tool.
 """
         return prompt
 
     def build_create_tickets(
         self, epic_file: str, output_dir: Optional[str] = None
     ) -> str:
-        """Construct create-tickets prompt with command instructions and output directory.
+        """Construct create-tickets prompt with command instructions and output
+        directory.
 
         Args:
             epic_file: Path to epic YAML file
@@ -80,22 +91,32 @@ HEADLESS MODE: Execute autonomously without user interaction.
         Returns:
             Complete prompt string for Claude CLI execution
         """
-        command_instructions = self._read_command("create-tickets")
-
+        command_file = self.context.claude_dir / "commands" / "create-tickets.md"
         output_spec = (
             output_dir
             if output_dir
             else "default tickets directory based on epic location"
         )
 
-        prompt = f"""{command_instructions}
+        prompt = f"""Read {command_file} and execute the Task Agent Instructions.
+
+CRITICAL: You MUST use the Task tool to spawn a sub-agent for this work.
+- Use Task tool with subagent_type: "general-purpose"
+- Pass the Task Agent Instructions from the command file to the sub-agent
+- DO NOT execute this work inline in your context
+- Sub-agents preserve your context window
+
+Epic file: {epic_file}
+Output directory: {output_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
-- Read epic file: {epic_file}
-- Generate all tickets in: {output_spec}
-- Create one markdown file per ticket
-- Report all created ticket files when complete
+- The Task agent will read the epic file
+- The Task agent will generate all ticket markdown files
+- The Task agent will report all created ticket files
 - No interactive prompts or confirmations
+
+IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
+tool.
 """
         return prompt
 
@@ -112,8 +133,7 @@ HEADLESS MODE: Execute autonomously without user interaction.
         Returns:
             Complete prompt string for Claude CLI execution
         """
-        command_instructions = self._read_command("execute-epic")
-
+        command_file = self.context.claude_dir / "commands" / "execute-epic.md"
         mode = (
             "DRY-RUN: Show execution plan only, do not execute tickets"
             if dry_run
@@ -125,15 +145,27 @@ HEADLESS MODE: Execute autonomously without user interaction.
             else "OPTIMIZED: Execute with dependency-aware orchestration"
         )
 
-        prompt = f"""{command_instructions}
+        prompt = f"""Read {command_file} and execute the Task Agent Instructions.
+
+CRITICAL: For EACH ticket execution:
+- Use the Task tool to spawn a sub-agent
+- Pass ticket path to /execute-ticket command
+- DO NOT execute tickets inline in your context
+- Sub-agents keep your context clean
+
+Epic file: {epic_file}
+Mode: {mode}
+Execution style: {execution_style}
 
 HEADLESS MODE: Execute autonomously without user interaction.
-- Read epic file: {epic_file}
-- {mode}
-- {execution_style}
-- Spawn orchestrator agent for dependency management
-- Report execution progress and results
+- The orchestrator Task agent will read the epic file
+- The orchestrator will spawn sub-agents for each ticket execution
+- The orchestrator will manage dependencies and track state
+- The orchestrator will create PRs and finalize artifacts
 - No interactive prompts or confirmations
+
+IMPORTANT: You are the work orchestrator. You are not allowed to execute the tickets
+yourself. You must delegate ticket execution to sub-agents.
 """
         return prompt
 
@@ -153,22 +185,33 @@ HEADLESS MODE: Execute autonomously without user interaction.
         Returns:
             Complete prompt string for Claude CLI execution
         """
-        command_instructions = self._read_command("execute-ticket")
-
-        epic_context = f"\n- Epic context: {epic}" if epic else ""
+        command_file = self.context.claude_dir / "commands" / "execute-ticket.md"
+        epic_context = f"\nEpic context: {epic}" if epic else ""
         base_commit_spec = (
-            f"\n- Base commit: {base_commit}"
+            f"\nBase commit: {base_commit}"
             if base_commit
-            else "\n- Base commit: current HEAD"
+            else "\nBase commit: current HEAD"
         )
 
-        prompt = f"""{command_instructions}
+        prompt = f"""Read {command_file} and execute the Task Agent Instructions.
+
+CRITICAL: You MUST use the Task tool to spawn a sub-agent for this work.
+- Use Task tool with subagent_type: "general-purpose"
+- Pass the Task Agent Instructions from the command file to the sub-agent
+- DO NOT execute this work inline in your context
+- Sub-agents preserve your context window
+
+Ticket file: {ticket_file}{epic_context}{base_commit_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
-- Read ticket file: {ticket_file}{epic_context}{base_commit_spec}
-- Spawn task agent for implementation
-- Validate, implement, and test all requirements
-- Report completion status and artifacts
+- The Task agent will read the ticket file
+- The Task agent will run pre-flight validation
+- The Task agent will implement all requirements
+- The Task agent will run tests and commit changes
+- The Task agent will report completion status
 - No interactive prompts or confirmations
+
+IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
+tool.
 """
         return prompt

@@ -52,7 +52,7 @@ def command(
         # Remove existing if force
         if force and config.exists():
             config.config_file.unlink()
-            console.print(f"[yellow]Removed existing config[/yellow]")
+            console.print("[yellow]Removed existing config[/yellow]")
 
         # Create config file
         config_path = config.create_default()

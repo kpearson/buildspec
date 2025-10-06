@@ -33,7 +33,10 @@ class ClaudeRunner:
         """
         try:
             result = subprocess.run(
-                ["claude", "-p", prompt], cwd=self.context.cwd, check=False, text=True
+                ["claude", "-p", prompt, "--dangerously-skip-permissions"],
+                cwd=self.context.cwd,
+                check=False,
+                text=True,
             )
             return result.returncode
         except FileNotFoundError:

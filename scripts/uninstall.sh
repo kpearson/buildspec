@@ -11,7 +11,7 @@ echo ""
 # 1. Uninstall CLI via uv or pip
 echo "📦 Uninstalling CLI..."
 if command -v uv >/dev/null 2>&1 && uv pip show buildspec-cli >/dev/null 2>&1; then
-  uv pip uninstall -y buildspec-cli
+  uv pip uninstall buildspec-cli
   echo "✓ CLI uninstalled (uv)"
 elif pip show buildspec-cli >/dev/null 2>&1; then
   pip uninstall -y buildspec-cli

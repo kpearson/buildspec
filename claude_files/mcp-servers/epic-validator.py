@@ -9,7 +9,6 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 
 def validate_epic_creation(planning_doc_path: str) -> dict:
