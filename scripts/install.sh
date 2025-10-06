@@ -10,10 +10,16 @@ CLAUDE_DIR="$HOME/.claude"
 echo "Installing Buildspec Toolkit..."
 echo ""
 
-# 1. Install CLI via pip (global, editable mode)
-echo "📦 Installing CLI with pip..."
-pip install -e "$PROJECT_ROOT"
-echo "✓ CLI installed via pip"
+# 1. Install CLI via uv (global, editable mode)
+echo "📦 Installing CLI with uv..."
+if command -v uv >/dev/null 2>&1; then
+    uv pip install -e "$PROJECT_ROOT"
+    echo "✓ CLI installed via uv"
+else
+    echo "⚠️  uv not found, falling back to pip..."
+    pip install -e "$PROJECT_ROOT"
+    echo "✓ CLI installed via pip"
+fi
 
 # 2. Install Claude Code files
 echo ""

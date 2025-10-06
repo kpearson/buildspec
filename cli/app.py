@@ -1,7 +1,7 @@
 """Main Typer application instance."""
 
 import typer
-from cli.commands import create_epic, create_tickets, execute_epic, execute_ticket
+from cli.commands import create_epic, create_tickets, execute_epic, execute_ticket, init
 
 app = typer.Typer(
     name="buildspec",
@@ -10,6 +10,7 @@ app = typer.Typer(
 )
 
 # Register commands
+app.command(name="init")(init.command)
 app.command(name="create-epic")(create_epic.command)
 app.command(name="create-tickets")(create_tickets.command)
 app.command(name="execute-epic")(execute_epic.command)

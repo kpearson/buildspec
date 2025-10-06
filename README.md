@@ -13,12 +13,17 @@ cd ~/tools/buildspec
 
 # Install the toolkit
 make install
+
+# Initialize configuration (optional but recommended)
+buildspec init
 ```
 
 This installs:
 - ✅ `buildspec` CLI command via pip (to `~/.local/bin/buildspec`)
 - ✅ Claude Code files via symlinks (agents, commands, scripts to `~/.claude/`)
-- ✅ All dependencies (typer, rich)
+- ✅ All dependencies (typer, rich, tomli)
+
+After installation, run `buildspec init` to create your configuration file at `~/.config/buildspec/config.toml`.
 
 ### Available Make Commands
 
@@ -50,6 +55,28 @@ make help         # Show available commands
 ├── hooks/            → ~/tools/buildspec/claude_files/hooks/
 └── mcp-servers/      → ~/tools/buildspec/claude_files/mcp-servers/
 ```
+
+## Configuration
+
+### Initialize Configuration
+
+```bash
+# Create default configuration (XDG-compliant)
+buildspec init
+
+# Show default config without creating
+buildspec init --show
+
+# Overwrite existing config
+buildspec init --force
+```
+
+This creates `~/.config/buildspec/config.toml` following the XDG Base Directory specification. You can customize:
+- Claude CLI command and flags
+- Epic and ticket naming conventions
+- Git branch prefixes
+- Validation settings
+- PR templates and more
 
 ## Usage
 

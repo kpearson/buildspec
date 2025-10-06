@@ -8,11 +8,14 @@ CLAUDE_DIR="$HOME/.claude"
 echo "Removing Buildspec Toolkit..."
 echo ""
 
-# 1. Uninstall CLI via pip
+# 1. Uninstall CLI via uv or pip
 echo "📦 Uninstalling CLI..."
-if pip show buildspec-cli >/dev/null 2>&1; then
+if command -v uv >/dev/null 2>&1 && uv pip show buildspec-cli >/dev/null 2>&1; then
+    uv pip uninstall -y buildspec-cli
+    echo "✓ CLI uninstalled (uv)"
+elif pip show buildspec-cli >/dev/null 2>&1; then
     pip uninstall -y buildspec-cli
-    echo "✓ CLI uninstalled"
+    echo "✓ CLI uninstalled (pip)"
 else
     echo "  Package 'buildspec-cli' not found (may have been manually removed)"
 fi
