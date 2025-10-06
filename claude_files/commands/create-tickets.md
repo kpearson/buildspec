@@ -221,4 +221,3 @@ The command handles:
 - `/execute-ticket`: Execute individual tickets
 - `/code-review`: Review ticket implementations
 - `/validate-epic`: Validate epic before ticket generation
-

@@ -90,4 +90,3 @@ tickets:
 5. **YOU MUST call Read tool to verify creation**
 
 **NO TEXT RESPONSES WITHOUT TOOL CALLS**
-

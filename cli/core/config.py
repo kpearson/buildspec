@@ -26,9 +26,9 @@ class Config:
     def __init__(self):
         """Initialize config paths using XDG Base Directory specification."""
         # Use XDG_CONFIG_HOME if set, otherwise default to ~/.config
-        xdg_config = os.getenv('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
-        self.config_dir = Path(xdg_config) / 'buildspec'
-        self.config_file = self.config_dir / 'config.toml'
+        xdg_config = os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        self.config_dir = Path(xdg_config) / "buildspec"
+        self.config_file = self.config_dir / "config.toml"
 
         # Load config if exists
         self._config = self._load() if self.config_file.exists() else {}
@@ -46,7 +46,7 @@ class Config:
             )
 
         try:
-            with open(self.config_file, 'rb') as f:
+            with open(self.config_file, "rb") as f:
                 return tomllib.load(f)
         except Exception as e:
             raise RuntimeError(f"Failed to load config: {e}")
@@ -61,7 +61,7 @@ class Config:
         Returns:
             Configuration value or default
         """
-        keys = key.split('.')
+        keys = key.split(".")
         value = self._config
 
         for k in keys:
@@ -158,22 +158,22 @@ auto_create_prs = true
     def create_directories(self):
         """Create additional XDG directories for buildspec."""
         # Config dir (for templates, etc.)
-        templates_dir = self.config_dir / 'templates'
+        templates_dir = self.config_dir / "templates"
         templates_dir.mkdir(parents=True, exist_ok=True)
 
         # State dir (for future use - logs, history)
-        xdg_state = os.getenv('XDG_STATE_HOME', os.path.expanduser('~/.local/state'))
-        state_dir = Path(xdg_state) / 'buildspec'
+        xdg_state = os.getenv("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+        state_dir = Path(xdg_state) / "buildspec"
         state_dir.mkdir(parents=True, exist_ok=True)
 
         # Cache dir (for future use)
-        xdg_cache = os.getenv('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
-        cache_dir = Path(xdg_cache) / 'buildspec'
+        xdg_cache = os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+        cache_dir = Path(xdg_cache) / "buildspec"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         return {
-            'config': self.config_dir,
-            'templates': templates_dir,
-            'state': state_dir,
-            'cache': cache_dir
+            "config": self.config_dir,
+            "templates": templates_dir,
+            "state": state_dir,
+            "cache": cache_dir,
         }

@@ -20,6 +20,7 @@ buildspec init
 ```
 
 This installs:
+
 - ✅ `buildspec` CLI command via pip (to `~/.local/bin/buildspec`)
 - ✅ Claude Code files via symlinks (agents, commands, scripts to `~/.claude/`)
 - ✅ All dependencies (typer, rich, tomli)
@@ -40,6 +41,7 @@ make help         # Show available commands
 ### What Gets Installed
 
 **CLI Binary (via pip):**
+
 ```bash
 # Pip creates:
 ~/.local/bin/buildspec
@@ -49,6 +51,7 @@ make help         # Show available commands
 ```
 
 **Claude Code Files (via symlinks):**
+
 ```bash
 ~/.claude/
 ├── agents/           → ~/tools/buildspec/claude_files/agents/
@@ -73,7 +76,9 @@ buildspec init --show
 buildspec init --force
 ```
 
-This creates `~/.config/buildspec/config.toml` following the XDG Base Directory specification. You can customize:
+This creates `~/.config/buildspec/config.toml` following the XDG Base Directory
+specification. You can customize:
+
 - Claude CLI command and flags
 - Epic and ticket naming conventions
 - Git branch prefixes
@@ -122,21 +127,25 @@ Planning Doc (1-2k lines) → Epic YAML (100-500 lines) → Tickets (detailed) �
 ### Key Features
 
 #### 🔄 **Autonomous Execution**
+
 - Every command spawns Task agents for uninterrupted completion
 - No manual intervention or permission prompts required
 - Works in CI/CD environments
 
 #### 🧠 **Context Preservation**
+
 - Epics provide coordination context to every ticket
 - Architectural decisions flow through entire implementation
 - Interface contracts ensure component compatibility
 
 #### 🔒 **Quality Assurance**
+
 - Pre-flight test validation before any work begins
 - Full test suite must pass before completion
 - Git branch management with proper dependency tracking
 
 #### 📊 **Dependency Management**
+
 - Complex dependency graphs with sequential execution
 - Stacked branch strategy for clean integration
 - Automatic PR creation with proper merge ordering
@@ -153,20 +162,20 @@ acceptance_criteria:
   - "Measurable success criteria"
 
 coordination_requirements:
-  function_profiles:        # Function signatures, arities, intents
+  function_profiles: # Function signatures, arities, intents
     TicketID:
       - name: "functionName"
         arity: 2
         intent: "What it does"
         signature: "def functionName(param1, param2) -> ReturnType"
 
-  directory_structure:      # File organization
+  directory_structure: # File organization
     required_paths:
       - "src/module/"
     organization_patterns:
       models: "src/models/[ModelName].py"
 
-  integration_contracts:    # What each ticket provides/consumes
+  integration_contracts: # What each ticket provides/consumes
     ticket-id:
       provides: ["API endpoints", "Data models"]
       consumes: ["External services"]
@@ -232,7 +241,8 @@ buildspec execute-epic planning/user-auth.epic.yaml
 
 ### Making Changes
 
-Since the CLI is installed in editable mode (`pip install -e`), changes apply instantly:
+Since the CLI is installed in editable mode (`pip install -e`), changes apply
+instantly:
 
 ```bash
 # Edit code
@@ -278,6 +288,7 @@ make uninstall
 ```
 
 This removes:
+
 - CLI package via `pip uninstall buildspec-cli`
 - All Claude Code files from `~/.claude/`
 
@@ -309,13 +320,15 @@ pip install git+https://github.com/you/buildspec.git
 
 ### `buildspec: command not found`
 
-Pip installed to a directory not in your PATH. Add this to `~/.bashrc` or `~/.zshrc`:
+Pip installed to a directory not in your PATH. Add this to `~/.bashrc` or
+`~/.zshrc`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Then reload your shell:
+
 ```bash
 source ~/.bashrc  # or source ~/.zshrc
 ```

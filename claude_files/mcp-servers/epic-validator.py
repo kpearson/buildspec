@@ -5,58 +5,53 @@ Provides custom tools for validating epic creation inputs
 """
 
 import json
-import sys
 import os
-import subprocess
-from pathlib import Path
 import re
+import subprocess
+import sys
+from pathlib import Path
+
 
 def validate_epic_creation(planning_doc_path: str) -> dict:
     """Validate epic creation inputs using the epic-paths.sh script"""
 
     # Clean path - remove line numbers
-    clean_path = re.sub(r':\d+$', '', planning_doc_path)
+    clean_path = re.sub(r":\d+$", "", planning_doc_path)
 
     try:
         # Run the validation script
         script_path = os.path.expanduser("~/.claude/scripts/epic-paths.sh")
         result = subprocess.run(
-            [script_path, clean_path],
-            capture_output=True,
-            text=True,
-            check=False
+            [script_path, clean_path], capture_output=True, text=True, check=False
         )
 
         # Parse the output
-        output_lines = result.stdout.strip().split('\n')
+        output_lines = result.stdout.strip().split("\n")
         validation_data = {}
 
         for line in output_lines:
-            if '=' in line:
-                key, value = line.split('=', 1)
+            if "=" in line:
+                key, value = line.split("=", 1)
                 validation_data[key] = value
 
         # Determine validation result
-        spec_exists = validation_data.get('SPEC_EXISTS', 'false') == 'true'
-        epic_exists = validation_data.get('EPIC_EXISTS', 'false') == 'true'
+        spec_exists = validation_data.get("SPEC_EXISTS", "false") == "true"
+        epic_exists = validation_data.get("EPIC_EXISTS", "false") == "true"
 
         return {
             "valid": spec_exists and not epic_exists,
             "spec_exists": spec_exists,
             "epic_exists": epic_exists,
-            "epic_file": validation_data.get('EPIC_FILE', ''),
-            "target_dir": validation_data.get('TARGET_DIR', ''),
-            "base_name": validation_data.get('BASE_NAME', ''),
-            "error_message": validation_data.get('ERROR_MESSAGE', ''),
-            "cleaned_path": clean_path
+            "epic_file": validation_data.get("EPIC_FILE", ""),
+            "target_dir": validation_data.get("TARGET_DIR", ""),
+            "base_name": validation_data.get("BASE_NAME", ""),
+            "error_message": validation_data.get("ERROR_MESSAGE", ""),
+            "cleaned_path": clean_path,
         }
 
     except Exception as e:
-        return {
-            "valid": False,
-            "error": str(e),
-            "cleaned_path": clean_path
-        }
+        return {"valid": False, "error": str(e), "cleaned_path": clean_path}
+
 
 def handle_request(request):
     """Handle MCP requests"""
@@ -72,11 +67,11 @@ def handle_request(request):
                         "properties": {
                             "planning_doc_path": {
                                 "type": "string",
-                                "description": "Path to the planning document (.md file)"
+                                "description": "Path to the planning document (.md file)",
                             }
                         },
-                        "required": ["planning_doc_path"]
-                    }
+                        "required": ["planning_doc_path"],
+                    },
                 }
             ]
         }
@@ -96,19 +91,14 @@ def handle_request(request):
                 elif result["epic_exists"]:
                     content = f"❌ Epic file already exists: {result['epic_file']}\n\nPlease remove the existing file or use a different name."
                 else:
-                    content = f"❌ Validation failed: {result.get('error', 'Unknown error')}"
+                    content = (
+                        f"❌ Validation failed: {result.get('error', 'Unknown error')}"
+                    )
 
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": content
-                    }
-                ],
-                "_meta": result
-            }
+            return {"content": [{"type": "text", "text": content}], "_meta": result}
 
     return {"error": "Unknown method"}
+
 
 def main():
     """Main MCP server loop"""
@@ -125,6 +115,7 @@ def main():
             error_response = {"error": str(e)}
             print(json.dumps(error_response))
             sys.stdout.flush()
+
 
 if __name__ == "__main__":
     main()

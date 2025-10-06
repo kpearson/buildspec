@@ -1,6 +1,7 @@
 """Claude CLI execution wrapper."""
 
 import subprocess
+
 from cli.core.context import ProjectContext
 
 
@@ -32,10 +33,7 @@ class ClaudeRunner:
         """
         try:
             result = subprocess.run(
-                ["claude", "-p", prompt],
-                cwd=self.context.cwd,
-                check=False,
-                text=True
+                ["claude", "-p", prompt], cwd=self.context.cwd, check=False, text=True
             )
             return result.returncode
         except FileNotFoundError:

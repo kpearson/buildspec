@@ -12,16 +12,11 @@ console = Console()
 
 def command(
     force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Overwrite existing configuration"
+        False, "--force", "-f", help="Overwrite existing configuration"
     ),
     show_config: bool = typer.Option(
-        False,
-        "--show",
-        help="Show default configuration without creating"
-    )
+        False, "--show", help="Show default configuration without creating"
+    ),
 ):
     """Initialize buildspec configuration (XDG-compliant).
 
@@ -34,10 +29,7 @@ def command(
     if show_config:
         console.print("\n[bold]Default configuration:[/bold]\n")
         syntax = Syntax(
-            Config.get_default_config(),
-            "toml",
-            theme="monokai",
-            line_numbers=True
+            Config.get_default_config(), "toml", theme="monokai", line_numbers=True
         )
         console.print(syntax)
         console.print(f"\n[dim]Would be created at: {config.config_file}[/dim]")
@@ -51,7 +43,7 @@ def command(
                 f"{config.config_file}\n\n"
                 f"Use [bold]--force[/bold] to overwrite or [bold]--show[/bold] to view default config",
                 title="⚠️  Config Exists",
-                border_style="yellow"
+                border_style="yellow",
             )
         )
         raise typer.Exit(code=1)
@@ -79,17 +71,14 @@ def command(
                 f"  • Cache:     {dirs['cache']}\n\n"
                 f"[dim]Edit the config file to customize buildspec behavior.[/dim]",
                 title="✅ Buildspec Initialized",
-                border_style="green"
+                border_style="green",
             )
         )
 
         # Show config preview
         console.print("\n[bold]Configuration preview:[/bold]\n")
         syntax = Syntax(
-            config.config_file.read_text(),
-            "toml",
-            theme="monokai",
-            line_numbers=False
+            config.config_file.read_text(), "toml", theme="monokai", line_numbers=False
         )
         console.print(syntax)
 

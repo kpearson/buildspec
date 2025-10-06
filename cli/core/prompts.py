@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Optional
+
 from cli.core.context import ProjectContext
 
 
@@ -67,7 +68,9 @@ HEADLESS MODE: Execute autonomously without user interaction.
 """
         return prompt
 
-    def build_create_tickets(self, epic_file: str, output_dir: Optional[str] = None) -> str:
+    def build_create_tickets(
+        self, epic_file: str, output_dir: Optional[str] = None
+    ) -> str:
         """Construct create-tickets prompt with command instructions and output directory.
 
         Args:
@@ -79,7 +82,11 @@ HEADLESS MODE: Execute autonomously without user interaction.
         """
         command_instructions = self._read_command("create-tickets")
 
-        output_spec = output_dir if output_dir else "default tickets directory based on epic location"
+        output_spec = (
+            output_dir
+            if output_dir
+            else "default tickets directory based on epic location"
+        )
 
         prompt = f"""{command_instructions}
 
@@ -92,7 +99,9 @@ HEADLESS MODE: Execute autonomously without user interaction.
 """
         return prompt
 
-    def build_execute_epic(self, epic_file: str, dry_run: bool = False, no_parallel: bool = False) -> str:
+    def build_execute_epic(
+        self, epic_file: str, dry_run: bool = False, no_parallel: bool = False
+    ) -> str:
         """Construct execute-epic prompt with command instructions and execution flags.
 
         Args:
@@ -105,8 +114,16 @@ HEADLESS MODE: Execute autonomously without user interaction.
         """
         command_instructions = self._read_command("execute-epic")
 
-        mode = "DRY-RUN: Show execution plan only, do not execute tickets" if dry_run else "EXECUTE: Run all tickets"
-        execution_style = "SEQUENTIAL: Execute tickets one at a time" if no_parallel else "OPTIMIZED: Execute with dependency-aware orchestration"
+        mode = (
+            "DRY-RUN: Show execution plan only, do not execute tickets"
+            if dry_run
+            else "EXECUTE: Run all tickets"
+        )
+        execution_style = (
+            "SEQUENTIAL: Execute tickets one at a time"
+            if no_parallel
+            else "OPTIMIZED: Execute with dependency-aware orchestration"
+        )
 
         prompt = f"""{command_instructions}
 
@@ -120,7 +137,12 @@ HEADLESS MODE: Execute autonomously without user interaction.
 """
         return prompt
 
-    def build_execute_ticket(self, ticket_file: str, epic: Optional[str] = None, base_commit: Optional[str] = None) -> str:
+    def build_execute_ticket(
+        self,
+        ticket_file: str,
+        epic: Optional[str] = None,
+        base_commit: Optional[str] = None,
+    ) -> str:
         """Construct execute-ticket prompt with command instructions and context.
 
         Args:
@@ -134,7 +156,11 @@ HEADLESS MODE: Execute autonomously without user interaction.
         command_instructions = self._read_command("execute-ticket")
 
         epic_context = f"\n- Epic context: {epic}" if epic else ""
-        base_commit_spec = f"\n- Base commit: {base_commit}" if base_commit else "\n- Base commit: current HEAD"
+        base_commit_spec = (
+            f"\n- Base commit: {base_commit}"
+            if base_commit
+            else "\n- Base commit: current HEAD"
+        )
 
         prompt = f"""{command_instructions}
 

@@ -5,6 +5,7 @@
 ### Directory Structure
 
 **Before:**
+
 ```
 buildspec/
 ├── buildspec/              # ❌ Nested directory (confusing)
@@ -18,6 +19,7 @@ buildspec/
 ```
 
 **After:**
+
 ```
 buildspec/
 ├── bin/                    # ✅ Entry point at root
@@ -110,21 +112,26 @@ buildspec create-epic planning/spec.md
 ## Benefits of New Structure
 
 ### ✅ Clarity
+
 - No nested `buildspec/buildspec/` confusion
-- Clear separation: `cli/` for Python code, `claude_files/` for Claude Code components
+- Clear separation: `cli/` for Python code, `claude_files/` for Claude Code
+  components
 - Easy to understand what goes where
 
 ### ✅ Clean Installation
+
 - No git contamination of user projects
 - Toolkit lives in separate location (e.g., `~/tools/buildspec`)
 - Symlinks keep it accessible everywhere
 
 ### ✅ Simple Workflow
+
 - One command installs everything: `./install-symlinks.sh`
 - Works for both CLI and Claude Code slash commands
 - Updates instantly (symlinks point to source)
 
 ### ✅ Maintainability
+
 - All CLI code in one place (`cli/`)
 - All Claude Code files in one place (`claude_files/`)
 - Easy to add new commands or agents

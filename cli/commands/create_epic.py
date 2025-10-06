@@ -1,13 +1,14 @@
 """Create epic command implementation."""
 
-import typer
 from pathlib import Path
 from typing import Optional
+
+import typer
 from rich.console import Console
 
+from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
-from cli.core.claude import ClaudeRunner
 
 console = Console()
 
@@ -18,20 +19,14 @@ def command(
         exists=True,
         file_okay=True,
         dir_okay=False,
-        help="Path to planning document (.md file)"
+        help="Path to planning document (.md file)",
     ),
     output: Optional[Path] = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Override output epic file path"
+        None, "--output", "-o", help="Override output epic file path"
     ),
     project_dir: Optional[Path] = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Project directory (default: auto-detect)"
-    )
+        None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
+    ),
 ):
     """Create epic file from planning document."""
     try:
@@ -49,7 +44,7 @@ def command(
         builder = PromptBuilder(context)
         prompt = builder.build_create_epic(
             planning_doc=str(planning_doc_resolved),
-            output=str(output) if output else None
+            output=str(output) if output else None,
         )
 
         # Print action

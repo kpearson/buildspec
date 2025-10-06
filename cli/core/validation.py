@@ -26,7 +26,7 @@ class Validator:
         if not file_path.exists():
             raise FileNotFoundError(f"Planning document not found: {path}")
 
-        if file_path.suffix != '.md':
+        if file_path.suffix != ".md":
             raise ValueError(f"Planning document must be a .md file: {path}")
 
         return True
@@ -50,7 +50,7 @@ class Validator:
         if not file_path.exists():
             raise FileNotFoundError(f"Epic file not found: {path}")
 
-        if file_path.suffix not in ['.yaml', '.yml']:
+        if file_path.suffix not in [".yaml", ".yml"]:
             raise ValueError(f"Epic file must be a .yaml or .yml file: {path}")
 
         return True
@@ -74,7 +74,7 @@ class Validator:
         if not file_path.exists():
             raise FileNotFoundError(f"Ticket file not found: {path}")
 
-        if file_path.suffix != '.md':
+        if file_path.suffix != ".md":
             raise ValueError(f"Ticket file must be a .md file: {path}")
 
         return True
@@ -91,10 +91,7 @@ class Validator:
         """
         try:
             subprocess.run(
-                ["claude", "--version"],
-                capture_output=True,
-                check=True,
-                timeout=5
+                ["claude", "--version"], capture_output=True, check=True, timeout=5
             )
             return True
         except (FileNotFoundError, subprocess.CalledProcessError) as e:
