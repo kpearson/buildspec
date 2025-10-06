@@ -12,7 +12,8 @@ class ClaudeRunner:
     """
 
     def __init__(self, context: ProjectContext):
-        """Initialize Claude CLI runner with project context for correct execution directory.
+        """Initialize Claude CLI runner with project context for correct execution
+        directory.
 
         Args:
             context: ProjectContext with cwd for working directory
@@ -20,7 +21,8 @@ class ClaudeRunner:
         self.context = context
 
     def execute(self, prompt: str) -> int:
-        """Execute Claude CLI subprocess with constructed prompt in project context working directory.
+        """Execute Claude CLI subprocess with constructed prompt in project context
+        working directory.
 
         Args:
             prompt: Complete prompt string to pass to Claude CLI
@@ -39,8 +41,8 @@ class ClaudeRunner:
                 text=True,
             )
             return result.returncode
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             raise RuntimeError(
                 "Claude CLI not found in PATH.\n"
                 "Install Claude Code first: https://claude.com/claude-code"
-            )
+            ) from e

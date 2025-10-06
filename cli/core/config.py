@@ -48,7 +48,7 @@ class Config:
             with open(self.config_file, "rb") as f:
                 return tomllib.load(f)
         except Exception as e:
-            raise RuntimeError(f"Failed to load config: {e}")
+            raise RuntimeError(f"Failed to load config: {e}") from e
 
     def get(self, key: str, default=None):
         """Get configuration value by key (supports dot notation).

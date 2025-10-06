@@ -44,7 +44,8 @@ class PromptBuilder:
         return command_file.read_text()
 
     def build_create_epic(self, planning_doc: str, output: Optional[str] = None) -> str:
-        """Construct create-epic prompt with command instructions and headless mode flags.
+        """Construct create-epic prompt with command instructions and headless mode
+        flags.
 
         Args:
             planning_doc: Path to planning document

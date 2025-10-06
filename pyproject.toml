@@ -38,7 +38,9 @@ select = [
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
 ]
-ignore = []
+ignore = [
+    "B008",  # Allow function calls in argument defaults (Typer pattern)
+]
 
 [tool.ruff.format]
 quote-style = "double"

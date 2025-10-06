@@ -60,13 +60,17 @@ def handle_request(request):
             "tools": [
                 {
                     "name": "validate_epic_creation",
-                    "description": "Validate inputs for epic creation before starting work",
+                    "description": (
+                        "Validate inputs for epic creation before starting work"
+                    ),
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "planning_doc_path": {
                                 "type": "string",
-                                "description": "Path to the planning document (.md file)",
+                                "description": (
+                                    "Path to the planning document (.md file)"
+                                ),
                             }
                         },
                         "required": ["planning_doc_path"],
@@ -83,12 +87,26 @@ def handle_request(request):
             result = validate_epic_creation(arguments["planning_doc_path"])
 
             if result["valid"]:
-                content = f"✅ Validation passed!\n\nPlanning document: {result['cleaned_path']}\nTarget epic file: {result['epic_file']}\n\nReady to proceed with epic creation."
+                content = (
+                    f"✅ Validation passed!\n\n"
+                    f"Planning document: {result['cleaned_path']}\n"
+                    f"Target epic file: {result['epic_file']}\n\n"
+                    f"Ready to proceed with epic creation."
+                )
             else:
                 if not result["spec_exists"]:
-                    content = f"❌ Planning document not found: {result['cleaned_path']}\n\nError: {result.get('error_message', 'File does not exist')}\n\nPlease provide a valid planning document path."
+                    error_msg = result.get('error_message', 'File does not exist')
+                    content = (
+                        f"❌ Planning document not found: "
+                        f"{result['cleaned_path']}\n\n"
+                        f"Error: {error_msg}\n\n"
+                        f"Please provide a valid planning document path."
+                    )
                 elif result["epic_exists"]:
-                    content = f"❌ Epic file already exists: {result['epic_file']}\n\nPlease remove the existing file or use a different name."
+                    content = (
+                        f"❌ Epic file already exists: {result['epic_file']}\n\n"
+                        f"Please remove the existing file or use a different name."
+                    )
                 else:
                     content = (
                         f"❌ Validation failed: {result.get('error', 'Unknown error')}"

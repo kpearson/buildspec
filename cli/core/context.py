@@ -40,7 +40,8 @@ class ProjectContext:
         return self.cwd
 
     def _find_claude_dir(self) -> Path:
-        """Locate .claude directory, preferring local project over global ~/.claude fallback.
+        """Locate .claude directory, preferring local project over global ~/.claude
+        fallback.
 
         Returns:
             Path to .claude directory
