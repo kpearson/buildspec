@@ -35,13 +35,9 @@ build:
 	@echo "Building standalone binary with PyInstaller..."
 	@echo ""
 	@echo "Installing buildspec dependencies..."
-	@uv pip install -e . --quiet
-	@if ! command -v pyinstaller >/dev/null 2>&1; then \
-		echo "Installing PyInstaller..."; \
-		uv tool install pyinstaller --quiet; \
-	fi
+	@uv sync --group build --quiet
 	@echo "Running PyInstaller..."
-	@cd $(PWD) && pyinstaller buildspec.spec --clean --noconfirm
+	@cd $(PWD) && uv run pyinstaller buildspec.spec --clean --noconfirm
 	@echo ""
 	@echo "✅ Binary built successfully: dist/buildspec"
 	@echo ""

@@ -30,7 +30,7 @@ def command(
         # Strip line number notation (e.g., "file.md:123")
         if ":" in planning_doc:
             planning_doc = planning_doc.split(":", 1)[0]
-        
+
         planning_doc_path = Path(planning_doc)
         if not planning_doc_path.exists():
             console.print(f"[red]ERROR:[/red] File not found: {planning_doc}")
@@ -38,7 +38,7 @@ def command(
         if not planning_doc_path.is_file():
             console.print(f"[red]ERROR:[/red] Not a file: {planning_doc}")
             raise typer.Exit(code=1)
-        
+
         # Initialize context
         context = ProjectContext(cwd=project_dir)
 

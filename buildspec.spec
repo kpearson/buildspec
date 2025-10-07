@@ -7,6 +7,9 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
+        'typer',
+        'rich',
+        'tomli',
         'cli.commands.create_epic',
         'cli.commands.create_tickets',
         'cli.commands.execute_epic',
