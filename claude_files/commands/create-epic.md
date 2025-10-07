@@ -192,11 +192,13 @@ COORDINATION-FOCUSED ANALYSIS:
    - Verify dependency graph makes logical sense
    - Confirm epic file follows proper YAML structure
 
-6. Determine output path and generate epic file:
+6. Generate epic file with correct naming:
    - Extract directory from planning document path (e.g., "planning/" from
      "planning/user-auth-spec.md")
-   - Generate epic filename from document name (e.g., "user-auth.epic.yaml" from
-     "user-auth-spec.md")
+   - Generate epic filename from document name with .epic.yaml suffix
+   - CRITICAL: Filename MUST be [name].epic.yaml (not just [name].yaml)
+   - Example: "user-auth.epic.yaml" from "user-auth-spec.md"
+   - Example: "progress-ui.epic.yaml" from "progress-ui-spec.md"
    - Create epic file in same directory as planning document
 
 7. Generate comprehensive report including:

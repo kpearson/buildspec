@@ -60,6 +60,27 @@ def command(
         exit_code, session_id = runner.execute(prompt)
 
         if exit_code == 0:
+            # Post-execution: find and validate epic filename
+            epic_dir = planning_doc_path.parent
+            expected_base = planning_doc_path.stem.replace('-spec', '').replace('_spec', '')
+            
+            # Look for any YAML files created
+            yaml_files = sorted(epic_dir.glob('*.yaml'), key=lambda p: p.stat().st_mtime, reverse=True)
+            
+            for yaml_file in yaml_files:
+                # Skip if already correctly named
+                if yaml_file.name.endswith('.epic.yaml'):
+                    continue
+                    
+                # Check if this looks like our epic (has the expected base name)
+                if expected_base in yaml_file.stem:
+                    # Rename to add .epic suffix
+                    correct_name = yaml_file.stem + '.epic.yaml'
+                    correct_path = yaml_file.parent / correct_name
+                    yaml_file.rename(correct_path)
+                    console.print(f"[dim]Renamed: {yaml_file.name} → {correct_name}[/dim]")
+                    break
+            
             console.print("\n[green]✓ Epic created successfully[/green]")
             console.print(f"[dim]Session ID: {session_id}[/dim]")
         else:

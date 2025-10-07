@@ -1,6 +1,5 @@
 """Claude CLI execution wrapper."""
 
-import json
 import subprocess
 import uuid
 from typing import Optional, Tuple
@@ -41,24 +40,24 @@ class ClaudeRunner:
         """
         if session_id is None:
             session_id = str(uuid.uuid4())
-        
+
         try:
+            # Pipe prompt via stdin instead of -p flag to avoid subprocess hanging issues
             result = subprocess.run(
                 [
-                    "claude", 
-                    "-p", 
-                    prompt, 
-                    "--dangerously-skip-permissions", 
-                    "--output-format=json",
+                    "claude",
+                    "--dangerously-skip-permissions",
                     "--session-id",
-                    session_id
+                    session_id,
                 ],
+                input=prompt,
                 cwd=self.context.cwd,
                 check=False,
                 text=True,
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
-            
+
             return result.returncode, session_id
         except FileNotFoundError as e:
             raise RuntimeError(

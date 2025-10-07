@@ -74,6 +74,17 @@ HEADLESS MODE: Execute autonomously without user interaction.
 - The Task agent will report the created epic file path
 - No interactive prompts or confirmations
 
+CRITICAL FILE NAMING REQUIREMENT:
+The epic filename MUST end with .epic.yaml (not just .yaml)
+Examples:
+  ✓ CORRECT: progress-ui.epic.yaml
+  ✓ CORRECT: user-auth.epic.yaml
+  ✗ WRONG: progress-ui.yaml (missing .epic)
+  ✗ WRONG: user-auth.yaml (missing .epic)
+
+The filename must be: [epic-name].epic.yaml
+Double-check the filename before creating the file!
+
 IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
 tool.
 """
