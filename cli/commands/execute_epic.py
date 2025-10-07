@@ -15,6 +15,7 @@ from rich.table import Table
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
+from cli.utils.commit_parser import extract_ticket_name
 from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
 console = Console()
@@ -90,10 +91,7 @@ class GitWatcher:
     def _extract_ticket_name(self, commit_message: str) -> Optional[str]:
         """Extract ticket name from commit message.
 
-        Looks for patterns like:
-        - "ticket/ticket-name"
-        - "Completed ticket: ticket-name"
-        - "ticket-name" (as fallback)
+        Delegates to the commit_parser utility for comprehensive parsing.
 
         Args:
             commit_message: Git commit message
@@ -101,17 +99,7 @@ class GitWatcher:
         Returns:
             Ticket name if found, None otherwise
         """
-        # Try to extract ticket name from branch-like patterns
-        match = re.search(r"ticket/([a-z0-9-]+)", commit_message, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-        # Try to extract from "Completed ticket:" pattern
-        match = re.search(r"completed\s+ticket:\s*([a-z0-9-]+)", commit_message, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-        return None
+        return extract_ticket_name(commit_message)
 
     def get_completed_tickets(self) -> List[str]:
         """Get list of completed tickets (thread-safe).
