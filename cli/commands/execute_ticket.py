@@ -74,7 +74,7 @@ def command(
 
         # Execute
         runner = ClaudeRunner(context)
-        exit_code, returned_session_id = runner.execute(prompt, session_id=session_id)
+        exit_code, returned_session_id = runner.execute(prompt, session_id=session_id, console=console)
 
         if exit_code == 0:
             console.print("\n[green]✓ Ticket execution completed[/green]")
