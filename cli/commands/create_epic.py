@@ -57,7 +57,7 @@ def command(
 
         # Execute
         runner = ClaudeRunner(context)
-        exit_code, session_id = runner.execute(prompt)
+        exit_code, session_id = runner.execute(prompt, console=console)
 
         if exit_code == 0:
             # Post-execution: find and validate epic filename
