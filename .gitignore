@@ -4,3 +4,8 @@ __pycache__/
 # PyInstaller build artifacts
 build/
 dist/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
