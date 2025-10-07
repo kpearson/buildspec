@@ -14,8 +14,8 @@ console = Console()
 
 
 def command(
-    epic_file: Path = typer.Argument(
-        ..., exists=True, file_okay=True, dir_okay=False, help="Path to epic YAML file"
+    epic_file: str = typer.Argument(
+        ..., help="Path to epic YAML file"
     ),
     output_dir: Optional[Path] = typer.Option(
         None, "--output-dir", "-d", help="Override default tickets directory"
@@ -26,6 +26,18 @@ def command(
 ):
     """Create ticket files from epic definition."""
     try:
+        # Strip line number notation (e.g., "file.yaml:123")
+        if ":" in epic_file:
+            epic_file = epic_file.split(":", 1)[0]
+        
+        epic_file_path = Path(epic_file)
+        if not epic_file_path.exists():
+            console.print(f"[red]ERROR:[/red] File not found: {epic_file}")
+            raise typer.Exit(code=1)
+        if not epic_file_path.is_file():
+            console.print(f"[red]ERROR:[/red] Not a file: {epic_file}")
+            raise typer.Exit(code=1)
+        
         # Initialize context
         context = ProjectContext(cwd=project_dir)
 
@@ -34,7 +46,7 @@ def command(
         console.print(f"[dim]Claude dir: {context.claude_dir}[/dim]")
 
         # Resolve epic file path
-        epic_file_resolved = context.resolve_path(str(epic_file))
+        epic_file_resolved = context.resolve_path(epic_file)
 
         # Build prompt
         builder = PromptBuilder(context)
@@ -44,7 +56,7 @@ def command(
         )
 
         # Print action
-        console.print(f"\n[bold]Creating tickets from:[/bold] {epic_file}")
+        console.print(f"\n[bold]Creating tickets from:[/bold] {epic_file_path}")
 
         # Execute
         runner = ClaudeRunner(context)

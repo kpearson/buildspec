@@ -14,11 +14,8 @@ console = Console()
 
 
 def command(
-    planning_doc: Path = typer.Argument(
+    planning_doc: str = typer.Argument(
         ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
         help="Path to planning document (.md file)",
     ),
     output: Optional[Path] = typer.Option(
@@ -30,6 +27,18 @@ def command(
 ):
     """Create epic file from planning document."""
     try:
+        # Strip line number notation (e.g., "file.md:123")
+        if ":" in planning_doc:
+            planning_doc = planning_doc.split(":", 1)[0]
+        
+        planning_doc_path = Path(planning_doc)
+        if not planning_doc_path.exists():
+            console.print(f"[red]ERROR:[/red] File not found: {planning_doc}")
+            raise typer.Exit(code=1)
+        if not planning_doc_path.is_file():
+            console.print(f"[red]ERROR:[/red] Not a file: {planning_doc}")
+            raise typer.Exit(code=1)
+        
         # Initialize context
         context = ProjectContext(cwd=project_dir)
 
@@ -38,7 +47,7 @@ def command(
         console.print(f"[dim]Claude dir: {context.claude_dir}[/dim]")
 
         # Resolve planning doc path
-        planning_doc_resolved = context.resolve_path(str(planning_doc))
+        planning_doc_resolved = context.resolve_path(planning_doc)
 
         # Build prompt
         builder = PromptBuilder(context)
@@ -48,7 +57,7 @@ def command(
         )
 
         # Print action
-        console.print(f"\n[bold]Creating epic from:[/bold] {planning_doc}")
+        console.print(f"\n[bold]Creating epic from:[/bold] {planning_doc_path}")
 
         # Execute
         runner = ClaudeRunner(context)

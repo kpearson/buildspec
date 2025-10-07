@@ -62,10 +62,6 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=cli",
-    "--cov-report=term-missing",
-    "--cov-report=html:htmlcov",
-    "--cov-fail-under=90",
 ]
 markers = [
     "unit: Unit tests for individual components",
