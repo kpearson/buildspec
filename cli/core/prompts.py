@@ -122,7 +122,7 @@ tool.
         return prompt
 
     def build_execute_epic(
-        self, epic_file: str, dry_run: bool = False, no_parallel: bool = False
+        self, epic_file: str, dry_run: bool = False, no_parallel: bool = False, session_id: Optional[str] = None
     ) -> str:
         """Construct execute-epic prompt with command instructions and execution flags.
 
@@ -130,6 +130,7 @@ tool.
             epic_file: Path to epic YAML file
             dry_run: Show execution plan without running
             no_parallel: Execute tickets sequentially instead of parallel
+            session_id: Optional session ID to include in commits
 
         Returns:
             Complete prompt string for Claude CLI execution
@@ -145,6 +146,11 @@ tool.
             if no_parallel
             else "OPTIMIZED: Execute with dependency-aware orchestration"
         )
+        session_id_spec = (
+            f"\nSession ID: {session_id}"
+            if session_id
+            else ""
+        )
 
         prompt = f"""Read {command_file} and execute the Task Agent Instructions.
 
@@ -156,7 +162,7 @@ CRITICAL: For EACH ticket execution:
 
 Epic file: {epic_file}
 Mode: {mode}
-Execution style: {execution_style}
+Execution style: {execution_style}{session_id_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
 - The orchestrator Task agent will read the epic file
@@ -164,6 +170,10 @@ HEADLESS MODE: Execute autonomously without user interaction.
 - The orchestrator will manage dependencies and track state
 - The orchestrator will create PRs and finalize artifacts
 - No interactive prompts or confirmations
+
+COMMIT INSTRUCTION:
+When creating git commits (in any spawned sub-agents), include the session ID in the commit message body:
+session_id: {session_id if session_id else '[to be provided]'}
 
 IMPORTANT: You are the work orchestrator. You are not allowed to execute the tickets
 yourself. You must delegate ticket execution to sub-agents.
@@ -175,6 +185,7 @@ yourself. You must delegate ticket execution to sub-agents.
         ticket_file: str,
         epic: Optional[str] = None,
         base_commit: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> str:
         """Construct execute-ticket prompt with command instructions and context.
 
@@ -182,6 +193,7 @@ yourself. You must delegate ticket execution to sub-agents.
             ticket_file: Path to ticket markdown file
             epic: Optional path to epic file for context
             base_commit: Optional base commit SHA to branch from
+            session_id: Optional session ID to include in commits
 
         Returns:
             Complete prompt string for Claude CLI execution
@@ -193,6 +205,11 @@ yourself. You must delegate ticket execution to sub-agents.
             if base_commit
             else "\nBase commit: current HEAD"
         )
+        session_id_spec = (
+            f"\nSession ID: {session_id}"
+            if session_id
+            else ""
+        )
 
         prompt = f"""Read {command_file} and execute the Task Agent Instructions.
 
@@ -202,7 +219,7 @@ CRITICAL: You MUST use the Task tool to spawn a sub-agent for this work.
 - DO NOT execute this work inline in your context
 - Sub-agents preserve your context window
 
-Ticket file: {ticket_file}{epic_context}{base_commit_spec}
+Ticket file: {ticket_file}{epic_context}{base_commit_spec}{session_id_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
 - The Task agent will read the ticket file
@@ -211,6 +228,10 @@ HEADLESS MODE: Execute autonomously without user interaction.
 - The Task agent will run tests and commit changes
 - The Task agent will report completion status
 - No interactive prompts or confirmations
+
+COMMIT INSTRUCTION:
+When creating git commits, include the session ID in the commit message body:
+session_id: {session_id if session_id else '[to be provided]'}
 
 IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
 tool.

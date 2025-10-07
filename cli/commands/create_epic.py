@@ -9,6 +9,7 @@ from rich.console import Console
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
+from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
 console = Console()
 
@@ -16,7 +17,7 @@ console = Console()
 def command(
     planning_doc: str = typer.Argument(
         ...,
-        help="Path to planning document (.md file)",
+        help="Path to planning document (or directory containing spec file)",
     ),
     output: Optional[Path] = typer.Option(
         None, "--output", "-o", help="Override output epic file path"
@@ -27,17 +28,12 @@ def command(
 ):
     """Create epic file from planning document."""
     try:
-        # Strip line number notation (e.g., "file.md:123")
-        if ":" in planning_doc:
-            planning_doc = planning_doc.split(":", 1)[0]
-
-        planning_doc_path = Path(planning_doc)
-        if not planning_doc_path.exists():
-            console.print(f"[red]ERROR:[/red] File not found: {planning_doc}")
-            raise typer.Exit(code=1)
-        if not planning_doc_path.is_file():
-            console.print(f"[red]ERROR:[/red] Not a file: {planning_doc}")
-            raise typer.Exit(code=1)
+        # Resolve planning doc path with smart handling
+        try:
+            planning_doc_path = resolve_file_argument(planning_doc, expected_pattern="spec", arg_name="planning document")
+        except PathResolutionError as e:
+            console.print(f"[red]ERROR:[/red] {e}")
+            raise typer.Exit(code=1) from e
 
         # Initialize context
         context = ProjectContext(cwd=project_dir)
@@ -61,10 +57,11 @@ def command(
 
         # Execute
         runner = ClaudeRunner(context)
-        exit_code = runner.execute(prompt)
+        exit_code, session_id = runner.execute(prompt)
 
         if exit_code == 0:
             console.print("\n[green]✓ Epic created successfully[/green]")
+            console.print(f"[dim]Session ID: {session_id}[/dim]")
         else:
             raise typer.Exit(code=exit_code)
 

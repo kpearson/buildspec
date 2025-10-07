@@ -9,13 +9,14 @@ from rich.console import Console
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
+from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
 console = Console()
 
 
 def command(
     epic_file: str = typer.Argument(
-        ..., help="Path to epic YAML file"
+        ..., help="Path to epic YAML file (or directory containing epic file)"
     ),
     output_dir: Optional[Path] = typer.Option(
         None, "--output-dir", "-d", help="Override default tickets directory"
@@ -26,17 +27,12 @@ def command(
 ):
     """Create ticket files from epic definition."""
     try:
-        # Strip line number notation (e.g., "file.yaml:123")
-        if ":" in epic_file:
-            epic_file = epic_file.split(":", 1)[0]
-        
-        epic_file_path = Path(epic_file)
-        if not epic_file_path.exists():
-            console.print(f"[red]ERROR:[/red] File not found: {epic_file}")
-            raise typer.Exit(code=1)
-        if not epic_file_path.is_file():
-            console.print(f"[red]ERROR:[/red] Not a file: {epic_file}")
-            raise typer.Exit(code=1)
+        # Resolve epic file path with smart handling
+        try:
+            epic_file_path = resolve_file_argument(epic_file, expected_pattern="epic", arg_name="epic file")
+        except PathResolutionError as e:
+            console.print(f"[red]ERROR:[/red] {e}")
+            raise typer.Exit(code=1) from e
         
         # Initialize context
         context = ProjectContext(cwd=project_dir)
@@ -60,10 +56,11 @@ def command(
 
         # Execute
         runner = ClaudeRunner(context)
-        exit_code = runner.execute(prompt)
+        exit_code, session_id = runner.execute(prompt)
 
         if exit_code == 0:
             console.print("\n[green]✓ Tickets created successfully[/green]")
+            console.print(f"[dim]Session ID: {session_id}[/dim]")
         else:
             raise typer.Exit(code=exit_code)
 
