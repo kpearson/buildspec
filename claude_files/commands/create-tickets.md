@@ -25,7 +25,7 @@ tickets with full epic context.
 
 When you run this command from main Claude:
 
-1. **Parse Epic**: Extract TOML configuration and epic content
+1. **Parse Epic**: Extract YAML configuration and epic content
 2. **Generate Tickets**: Create individual ticket files for each task
 3. **Add Epic Context**: Include relevant epic information in each ticket
 4. **Set Dependencies**: Ensure ticket dependency relationships are documented
@@ -59,16 +59,17 @@ You are creating individual tickets from an epic file. Your task is to:
    - Understand the template structure and placeholder sections
 
 2. Read and parse the epic file at: [epic-file-path]
-   - Extract the TOML configuration block
+   - Extract the YAML frontmatter block
    - Parse epic metadata, acceptance criteria, and ticket definitions
    - Extract epic summary, architecture, and goals for context
 
 3. For each ticket defined in the epic configuration:
-   - Create a new markdown file at the path specified in the epic TOML
+   - Create a new markdown file at the path specified in the epic
    - Use the loaded ticket template as the base structure
    - Replace ALL template placeholders with specific, contextual information
    - Populate with epic context and ticket-specific information
    - Include proper dependency references
+   - Use descriptive ticket IDs that work as git branch names (lowercase, hyphen-separated, e.g., "add-user-authentication", "refactor-api-endpoints")
 
 4. Template population process using planning-ticket-template.md:
 
@@ -77,6 +78,7 @@ You are creating individual tickets from an epic file. Your task is to:
    TITLE SECTION:
    - [COMPONENT/MODULE]: Determine component from epic architecture and ticket role
    - [Short Descriptive Title]: Create specific title from ticket ID and purpose
+   - Ticket ID should be descriptive and usable as a git branch name (lowercase, hyphen-separated)
 
    ISSUE SUMMARY:
    - Replace placeholder with concise 1-2 sentence description
@@ -93,7 +95,7 @@ You are creating individual tickets from an epic file. Your task is to:
    - Include error handling, logging, and observability specific to this ticket
 
    INTEGRATION POINTS:
-   - Replace placeholders with actual dependencies from epic TOML
+   - Replace placeholders with actual dependencies from epic
    - Include specific file/line references where integration will happen
    - Add feature flag control and fallback mechanisms
 
@@ -117,18 +119,18 @@ You are creating individual tickets from an epic file. Your task is to:
    - Provide specific test scenarios for this ticket's functionality
 
    DEPENDENCIES SECTION:
-   - Upstream Dependencies: List actual tickets this depends on from epic TOML
+   - Upstream Dependencies: List actual tickets this depends on from epic
    - Downstream Dependencies: List tickets that depend on this one
    - Use actual ticket IDs and paths from the epic
 
 5. Ensure ticket consistency:
    - All tickets reference the same epic properly
-   - Dependencies match the epic TOML configuration exactly
+   - Dependencies match the epic configuration exactly
    - Architecture context is consistent across tickets
    - Each ticket clearly understands its role in the epic
    - ALL template placeholders are replaced with real, specific content
 
-6. Create files at paths specified in epic TOML:
+6. Create files at paths specified in epic:
    - Use the exact path specified in each ticket's "path" field
    - Create parent directories if they don't exist
    - Save each populated ticket template to its specified location
@@ -145,10 +147,15 @@ IMPORTANT:
 - No placeholder should remain unreplaced ([COMPONENT], [language], xtest, etc.)
 - Every ticket must include full epic context
 - Tickets should be self-contained but epic-aware
-- Dependencies must exactly match the epic TOML configuration
+- Dependencies must exactly match the epic configuration
 - Use epic architecture to inform all technical decisions
 - Ensure consistency across all generated tickets
 - Create tickets that execute-ticket can successfully implement
+- CRITICAL: Ticket IDs must be descriptive and git-branch-friendly:
+  * Use lowercase with hyphens (kebab-case)
+  * Be descriptive of the work (e.g., "add-user-authentication", not "ticket-1")
+  * Suitable for use as git branch names
+  * Avoid generic names like "task-1", "feature-2", etc.
 - CRITICAL: Use real project specifics:
   * Actual framework names (pytest, not "test_framework")
   * Actual commands ("uv run pytest", not "run tests")
@@ -162,14 +169,14 @@ IMPORTANT:
 ## Example Output
 
 After running the command, you'll get tickets at the paths specified in your
-epic TOML:
+epic:
 
 ```
 tickets/
-├── auth-base.md         # Foundation authentication models
-├── auth-api.md          # API endpoint implementation
-├── auth-ui.md           # User interface components
-└── auth-integration.md  # End-to-end integration testing
+├── implement-auth-models.md        # Foundation authentication models
+├── add-auth-api-endpoints.md       # API endpoint implementation
+├── build-auth-ui-components.md     # User interface components
+└── integrate-auth-end-to-end.md    # End-to-end integration testing
 ```
 
 Each ticket will contain:
@@ -180,7 +187,7 @@ Each ticket will contain:
 - Clear acceptance criteria derived from epic goals
 - Specific technical implementation guidance
 - Real testing requirements with actual commands
-- Proper dependency references matching epic TOML
+- Proper dependency references matching epic
 
 ## Integration with Other Commands
 
@@ -210,7 +217,7 @@ The created tickets work seamlessly with:
 The command handles:
 
 - Missing or invalid epic files
-- Malformed TOML configuration
+- Malformed YAML configuration
 - Directory creation issues
 - Template processing errors
 - Dependency validation problems
