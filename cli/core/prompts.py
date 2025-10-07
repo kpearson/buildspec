@@ -163,31 +163,49 @@ tool.
             else ""
         )
 
+        ticket_command_file = self.context.claude_dir / "commands" / "execute-ticket.md"
+        
         prompt = f"""Read {command_file} and execute the Task Agent Instructions.
-
-CRITICAL: For EACH ticket execution:
-- Use the Task tool to spawn a sub-agent
-- Pass ticket path to /execute-ticket command
-- DO NOT execute tickets inline in your context
-- Sub-agents keep your context clean
 
 Epic file: {epic_file}
 Mode: {mode}
 Execution style: {execution_style}{session_id_spec}
 
 HEADLESS MODE: Execute autonomously without user interaction.
-- The orchestrator Task agent will read the epic file
-- The orchestrator will spawn sub-agents for each ticket execution
-- The orchestrator will manage dependencies and track state
-- The orchestrator will create PRs and finalize artifacts
+- You (root Claude) are the orchestrator
+- Read the epic file and understand all tickets and dependencies
+- Manage dependencies and track state
+- Create PRs and finalize artifacts
 - No interactive prompts or confirmations
+
+CRITICAL: For EACH ticket execution:
+- Use the Task tool to spawn a sub-agent with subagent_type: "general-purpose"
+- Read {ticket_command_file} to get the Task Agent Instructions
+- Pass those Task Agent Instructions directly to the sub-agent
+- Provide the ticket file path and epic file path as context
+- DO NOT use Bash tool to run "buildspec execute-ticket"
+- DO NOT execute tickets inline in your context
+- Each sub-agent IS the builder - it does the actual ticket work
+
+Sub-agent prompt template for each ticket:
+```
+Read {ticket_command_file} and execute the Task Agent Instructions section.
+
+Ticket file: [path-to-ticket.md]
+Epic file: {epic_file}
+Base commit: [commit-sha-from-dependency-or-HEAD]
+Session ID: {session_id if session_id else '[to be provided]'}
+
+Execute the ticket work as described in the Task Agent Instructions.
+Include session_id in all commit messages.
+```
 
 COMMIT INSTRUCTION:
 When creating git commits (in any spawned sub-agents), include the session ID in the commit message body:
 session_id: {session_id if session_id else '[to be provided]'}
 
-IMPORTANT: You are the work orchestrator. You are not allowed to execute the tickets
-yourself. You must delegate ticket execution to sub-agents.
+IMPORTANT: You are the work orchestrator. You must delegate to Task sub-agents.
+Each Task sub-agent executes one ticket directly - no additional process spawning.
 """
         return prompt
 
