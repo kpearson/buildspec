@@ -34,21 +34,45 @@ reinstall: uninstall install
 build:
 	@echo "Building standalone binary with PyInstaller..."
 	@echo ""
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "❌ Error: Git working directory is not clean"; \
+		echo "Please commit or stash your changes before building"; \
+		exit 1; \
+	fi
+	@GIT_SHA=$$(git rev-parse --short HEAD); \
+	if ls dist/*-$${GIT_SHA}-buildspec 2>/dev/null | grep -q .; then \
+		EXISTING=$$(ls dist/*-$${GIT_SHA}-buildspec); \
+		echo "❌ Error: Build already exists for commit $${GIT_SHA}"; \
+		echo "Existing build: $${EXISTING}"; \
+		echo "If you need to rebuild, delete the existing build first or commit new changes"; \
+		exit 1; \
+	fi
 	@echo "Installing buildspec dependencies..."
 	@uv sync --group build --quiet
 	@echo "Running PyInstaller..."
 	@cd $(PWD) && uv run pyinstaller buildspec.spec --clean --noconfirm
+	@TIMESTAMP=$$(date +%s); \
+	GIT_SHA=$$(git rev-parse --short HEAD); \
+	BINARY_NAME="$${TIMESTAMP}-$${GIT_SHA}-buildspec"; \
+	mv dist/buildspec "dist/$${BINARY_NAME}"; \
+	echo "" > dist/.latest; \
+	echo "$${BINARY_NAME}" > dist/.latest
 	@echo ""
-	@echo "✅ Binary built successfully: dist/buildspec"
+	@echo "✅ Binary built successfully: dist/$$(cat dist/.latest)"
 	@echo ""
 
 install-binary: build
 	@echo "Installing standalone binary..."
 	@echo ""
-	@mkdir -p ~/.local/bin
-	@cp dist/buildspec ~/.local/bin/buildspec
-	@chmod +x ~/.local/bin/buildspec
-	@echo "✅ Binary installed to ~/.local/bin/buildspec"
+	@if [ ! -f dist/.latest ]; then \
+		echo "❌ Error: No build found. Run 'make build' first."; \
+		exit 1; \
+	fi
+	@BINARY_NAME=$$(cat dist/.latest); \
+	mkdir -p "$${HOME}/.local/bin"; \
+	rm -f "$${HOME}/.local/bin/buildspec"; \
+	ln -s "$(PWD)/dist/$${BINARY_NAME}" "$${HOME}/.local/bin/buildspec"; \
+	echo "✅ Symlink created: $${HOME}/.local/bin/buildspec -> $(PWD)/dist/$${BINARY_NAME}"
 	@echo ""
 	@./scripts/install.sh
 	@echo ""
