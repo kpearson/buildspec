@@ -15,6 +15,7 @@ from rich.table import Table
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
+from cli.utils.commit_parser import extract_ticket_name
 from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
 console = Console()
@@ -90,10 +91,7 @@ class GitWatcher:
     def _extract_ticket_name(self, commit_message: str) -> Optional[str]:
         """Extract ticket name from commit message.
 
-        Looks for patterns like:
-        - "ticket/ticket-name"
-        - "Completed ticket: ticket-name"
-        - "ticket-name" (as fallback)
+        Delegates to the commit_parser utility for comprehensive parsing.
 
         Args:
             commit_message: Git commit message
@@ -101,17 +99,7 @@ class GitWatcher:
         Returns:
             Ticket name if found, None otherwise
         """
-        # Try to extract ticket name from branch-like patterns
-        match = re.search(r"ticket/([a-z0-9-]+)", commit_message, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-        # Try to extract from "Completed ticket:" pattern
-        match = re.search(r"completed\s+ticket:\s*([a-z0-9-]+)", commit_message, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-        return None
+        return extract_ticket_name(commit_message)
 
     def get_completed_tickets(self) -> List[str]:
         """Get list of completed tickets (thread-safe).
@@ -178,6 +166,9 @@ def command(
     no_parallel: bool = typer.Option(
         False, "--no-parallel", "-s", help="Execute tickets sequentially"
     ),
+    no_live_updates: bool = typer.Option(
+        False, "--no-live-updates", help="Disable git commit watching and use basic spinner (useful in CI environments)"
+    ),
     project_dir: Optional[Path] = typer.Option(
         None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
     ),
@@ -218,12 +209,12 @@ def command(
         # Get initial git commit for watching
         initial_commit = get_current_git_commit(context.cwd)
 
-        # Initialize git watcher if we're in a git repo
+        # Initialize git watcher if we're in a git repo and live updates are enabled
         git_watcher = None
-        if initial_commit:
+        if initial_commit and not no_live_updates:
             git_watcher = GitWatcher(context.cwd, initial_commit)
 
-        # Execute with git watching or fallback to basic spinner
+        # Execute with git watching (live updates) or basic spinner
         runner = ClaudeRunner(context)
 
         try:
@@ -270,7 +261,7 @@ def command(
                 returned_session_id = result_container["session_id"]
 
             else:
-                # Fallback to basic spinner if not in git repo
+                # Use basic spinner (no live updates or not in git repo)
                 exit_code, returned_session_id = runner.execute(
                     prompt, session_id=session_id, console=console
                 )
