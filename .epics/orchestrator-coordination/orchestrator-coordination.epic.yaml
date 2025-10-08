@@ -1,0 +1,998 @@
+epic: "Orchestrator Coordination Strategy"
+description: "Define coordination patterns, state machine, git workflow, communication protocols, and orchestration workflows for reliable epic execution with multiple parallel sub-agents."
+ticket_count: 13
+
+acceptance_criteria:
+  - "Execute-epic.md documents complete state machine with epic and ticket states"
+  - "Git workflow strategy is explicitly defined with epic branch, ticket stacking, and merge order"
+  - "Ticket branches are merged into epic branch in dependency order after completion"
+  - "Epic branch is pushed to remote if remote exists (no PR creation)"
+  - "Concurrency control limits parallel sub-agents to MAX_CONCURRENT_TICKETS"
+  - "Sub-agent lifecycle protocol specifies spawn, monitor, validate, cleanup steps"
+  - "Completion report format is standardized and validated by orchestrator"
+  - "Error recovery workflows handle critical failures, non-critical failures, and crashes"
+  - "Base commit calculation correctly implements stacked branch strategy"
+  - "Epic-state.json updates are atomic with JSON schema validation"
+  - "Wave execution algorithm correctly calculates ready tickets and prioritizes them"
+  - "Orchestrator can resume epic execution from state file after crash"
+  - "Integration tests validate all coordination scenarios work end-to-end"
+
+rollback_on_failure: true
+
+coordination_requirements:
+  function_profiles:
+    ExecuteEpicOrchestrator:
+      initialize_epic_execution:
+        arity: 1
+        intent: "Create epic branch, artifacts directory, epic-state.json, parse epic YAML, build dependency graph"
+        signature: "initialize_epic_execution(epic_file: Path) -> EpicState"
+
+      calculate_ready_tickets:
+        arity: 1
+        intent: "Evaluate dependency completion for all pending tickets, return sorted list of ready tickets"
+        signature: "calculate_ready_tickets(state: EpicState) -> List[Ticket]"
+
+      spawn_ticket_sub_agent:
+        arity: 3
+        intent: "Use Task tool to spawn ticket-builder sub-agent with execute-ticket.md instructions"
+        signature: "spawn_ticket_sub_agent(ticket: Ticket, base_commit: str, session_id: str) -> SubAgentHandle"
+
+      validate_completion_report:
+        arity: 2
+        intent: "Check git branch exists, final commit is valid, verify test suite status and acceptance criteria"
+        signature: "validate_completion_report(ticket: Ticket, report: dict) -> ValidationResult"
+
+      update_epic_state:
+        arity: 2
+        intent: "Atomically update epic-state.json with ticket progress, maintain consistency and timestamps"
+        signature: "update_epic_state(state: EpicState, updates: dict) -> None"
+
+      execute_rollback:
+        arity: 1
+        intent: "Delete epic branch and all ticket branches, record rollback reason, report completed work"
+        signature: "execute_rollback(state: EpicState) -> None"
+
+      calculate_base_commit:
+        arity: 1
+        intent: "Determine which commit a ticket branch should be created from for stacked branches"
+        signature: "calculate_base_commit(ticket: Ticket) -> str"
+
+      merge_ticket_branches:
+        arity: 1
+        intent: "Merge all completed ticket branches into epic branch in dependency order"
+        signature: "merge_ticket_branches(state: EpicState) -> None"
+
+      push_epic_branch:
+        arity: 1
+        intent: "Push epic branch to remote if remote exists, no PR creation"
+        signature: "push_epic_branch(epic_branch: str) -> bool"
+
+    TicketExecutor:
+      spawn:
+        arity: 1
+        intent: "Spawn ticket execution and return handle for tracking"
+        signature: "spawn(ctx: TicketExecutionContext) -> ExecutionHandle"
+
+      wait_for_completion:
+        arity: 1
+        intent: "Block until execution completes, return standardized report"
+        signature: "wait_for_completion(handle: ExecutionHandle) -> CompletionReport"
+
+  directory_structure:
+    required_paths:
+      - ".epics/[epic-name]/artifacts/"
+      - ".epics/[epic-name]/artifacts/tickets/"
+    organization_patterns:
+      epic_files: ".epics/[epic-name]/[epic-name].epic.yaml"
+      planning_docs: ".epics/[epic-name]/[epic-name]-spec.md"
+      state_tracking: ".epics/[epic-name]/artifacts/epic-state.json"
+      ticket_reports: ".epics/[epic-name]/artifacts/tickets/[ticket-id]-[sha].md"
+    shared_locations:
+      epic_state_file: "artifacts/epic-state.json (relative to epic directory)"
+
+  breaking_changes_prohibited:
+    - "Epic YAML structure must remain compatible with current format"
+    - "Ticket YAML format must not change"
+    - "Epic-state.json schema can be extended but existing fields must maintain meaning"
+    - "execute-ticket.md Task Agent Instructions interface must remain stable"
+
+  shared_interfaces:
+    EpicState:
+      - "epic_id: string"
+      - "epic_branch: string"
+      - "baseline_commit: string (SHA)"
+      - "epic_pr_url: string | null"
+      - "status: enum (initializing|ready_to_execute|executing_wave|completed|failed|rolled_back|partial_success)"
+      - "started_at: ISO8601 timestamp"
+      - "completed_at: ISO8601 timestamp | null"
+      - "failure_reason: string | null"
+      - "tickets: dict[ticket-id, TicketState]"
+
+    TicketState:
+      - "path: string"
+      - "depends_on: list[ticket-id]"
+      - "critical: boolean"
+      - "status: enum (pending|queued|executing|validating|completed|failed|blocked)"
+      - "phase: enum (not-started|completed)"
+      - "git_info: {base_commit, branch_name, final_commit} | null"
+      - "started_at: ISO8601 timestamp | null"
+      - "completed_at: ISO8601 timestamp | null"
+      - "failure_reason: string | null"
+      - "blocking_dependency: string | null"
+
+    TicketCompletionReport:
+      - "ticket_id: string (required)"
+      - "status: enum (completed|failed|blocked) (required)"
+      - "branch_name: string (required)"
+      - "base_commit: string SHA (required)"
+      - "final_commit: string SHA | null (required)"
+      - "files_modified: list[string] (required)"
+      - "test_suite_status: enum (passing|failing|skipped) (required)"
+      - "acceptance_criteria: list[{criterion: string, met: boolean}] (required)"
+      - "failure_reason: string | null (optional)"
+      - "blocking_dependency: string | null (optional)"
+      - "warnings: list[string] (optional)"
+
+    TicketExecutionContext:
+      - "ticket_path: string (file system path to ticket markdown)"
+      - "epic_path: string (file system path to epic YAML)"
+      - "base_commit: string (git SHA to branch from)"
+      - "session_id: string (session ID for commit tracking)"
+
+  performance_contracts:
+    state_file_io: "< 100ms (small JSON file, local disk)"
+    ready_ticket_calculation: "< 500ms (dependency graph traversal)"
+    git_validation_checks: "< 1s per ticket (local git commands)"
+    wave_spawn_overhead: "< 5s (multiple Task tool invocations)"
+
+  security_constraints:
+    - "All file operations must validate paths are within project directory"
+    - "Git branch operations must validate branch names (no command injection)"
+    - "State file updates must validate JSON schema before writing"
+    - "Sub-agent reports must be sanitized before logging (no injection attacks)"
+
+  architectural_decisions:
+    technology_choices:
+      - "Python for orchestrator logic (already in CLI codebase)"
+      - "Task tool for sub-agent spawning (Claude-native mechanism)"
+      - "JSON for state tracking (human-readable, easily parseable)"
+      - "Git for coordination ground truth (branch/commit existence)"
+
+    patterns:
+      - "State machine pattern for epic execution lifecycle"
+      - "Wave-based execution for parallel ticket spawning"
+      - "Passive monitoring (no polling, wait for sub-agent return)"
+      - "Atomic state updates (read-modify-write with validation)"
+      - "Validation-after-completion (verify sub-agent claims)"
+
+    design_principles:
+      - "Single source of truth: epic-state.json for all coordination state"
+      - "Resumability: Epic execution can restart from state file after crash"
+      - "Fail-fast validation: Validate sub-agent reports before accepting completion"
+      - "Explicit over implicit: All state transitions explicitly recorded"
+      - "No silent failures: Every error path updates state and logs reason"
+
+    constraints:
+      - "MAX_CONCURRENT_TICKETS = 3 (balance parallel execution with resource limits)"
+      - "Epic-level states: initializing, ready_to_execute, executing_wave, completed, failed, rolled_back, partial_success"
+      - "Ticket-level states: pending, queued, executing, validating, completed, failed, blocked"
+      - "State transitions must be deterministic and explicitly documented"
+      - "Sub-agents spawn via Task tool, never via direct process spawning"
+
+    git_workflow:
+      epic_branch:
+        - "Created from current HEAD at epic initialization"
+        - "Name: epic/[epic-name]"
+        - "All ticket work happens within epic branch context"
+        - "Pushed to remote if remote exists (final step)"
+
+      ticket_branches:
+        - "Name: ticket/[ticket-id]"
+        - "Created by ticket sub-agents during execution"
+        - "Stacked on dependencies via base_commit calculation"
+        - "Stay local (never pushed to remote)"
+        - "Merged into epic branch after completion"
+
+      branch_stacking:
+        - "No dependencies: branch from epic.baseline_commit"
+        - "With dependencies: branch from dependency.git_info.final_commit"
+        - "Multiple dependencies: branch from most recent final_commit"
+
+      merge_workflow:
+        - "After all tickets complete, merge in dependency order"
+        - "Use topological sort of dependency graph"
+        - "Merge ticket branches into epic branch (not main)"
+        - "Fast-forward merges where possible"
+        - "Preserve ticket branch commits in epic branch history"
+
+      remote_strategy:
+        - "Check if git remote exists"
+        - "If remote exists: push epic branch only"
+        - "Never push ticket branches (implementation detail)"
+        - "No PR creation (project-agnostic, no assumptions about main branch)"
+        - "Epic branch on remote is the human-facing deliverable"
+
+  integration_contracts:
+    update-execute-epic-state-machine:
+      provides:
+        - "Formal state machine documentation in execute-epic.md"
+        - "Epic-level and ticket-level state definitions"
+        - "State transition rules and consistency requirements"
+      consumes:
+        - "Current execute-epic.md structure"
+      interfaces:
+        - "State machine defines valid transitions used by all other tickets"
+
+    implement-concurrency-control:
+      provides:
+        - "MAX_CONCURRENT_TICKETS constant"
+        - "calculate_ready_tickets() function implementation"
+        - "Concurrency slot calculation logic"
+      consumes:
+        - "State machine definitions from update-execute-epic-state-machine"
+      interfaces:
+        - "calculate_ready_tickets(state: EpicState) -> List[Ticket]"
+
+    define-sub-agent-lifecycle-protocol:
+      provides:
+        - "Spawn phase prompt construction documentation"
+        - "Completion report format requirements"
+        - "Validation phase checks specification"
+      consumes:
+        - "State machine definitions from update-execute-epic-state-machine"
+      interfaces:
+        - "TicketCompletionReport schema specification"
+        - "spawn_ticket_sub_agent() function contract"
+
+    implement-completion-report-validation:
+      provides:
+        - "validate_completion_report() function implementation"
+        - "Git verification checks (branch, commit existence)"
+        - "Test suite and acceptance criteria validation"
+      consumes:
+        - "Completion report format from define-sub-agent-lifecycle-protocol"
+      interfaces:
+        - "validate_completion_report(ticket: Ticket, report: dict) -> ValidationResult"
+
+    add-error-recovery-workflows:
+      provides:
+        - "Critical ticket failure handling (rollback vs partial success)"
+        - "Non-critical failure handling (blocked dependent tickets)"
+        - "Orchestrator crash recovery procedures"
+      consumes:
+        - "State machine definitions from update-execute-epic-state-machine"
+      interfaces:
+        - "execute_rollback(state: EpicState) -> None"
+        - "Error state transitions in state machine"
+
+    implement-base-commit-calculation:
+      provides:
+        - "calculate_base_commit() function for stacked branches"
+        - "Handling for no dependencies, single, and multiple dependencies"
+        - "Edge case handling and error conditions"
+      consumes:
+        - "State machine ticket state with git_info field"
+      interfaces:
+        - "calculate_base_commit(ticket: Ticket) -> str"
+
+    define-git-workflow-strategy:
+      provides:
+        - "Complete git workflow documentation in execute-epic.md"
+        - "Epic branch lifecycle and ticket branch strategy"
+        - "Branch stacking rules and merge workflow"
+        - "Remote push strategy (project-agnostic)"
+      consumes:
+        - "State machine from update-execute-epic-state-machine"
+        - "Base commit calculation from implement-base-commit-calculation"
+      interfaces:
+        - "Git workflow strategy used by all git-related tickets"
+
+    implement-ticket-branch-merging:
+      provides:
+        - "merge_ticket_branches() function implementation"
+        - "Topological sort for dependency-ordered merging"
+        - "Merge conflict detection and handling"
+      consumes:
+        - "Git workflow strategy from define-git-workflow-strategy"
+        - "Base commit calculation for understanding dependencies"
+      interfaces:
+        - "merge_ticket_branches(state: EpicState) -> None"
+
+    implement-remote-push-logic:
+      provides:
+        - "push_epic_branch() function implementation"
+        - "Remote detection and push execution"
+        - "Push failure handling"
+      consumes:
+        - "Git workflow strategy from define-git-workflow-strategy"
+        - "Merged epic branch from implement-ticket-branch-merging"
+      interfaces:
+        - "push_epic_branch(epic_branch: str) -> bool"
+
+    add-atomic-state-updates:
+      provides:
+        - "Atomic epic-state.json write (temp file + rename)"
+        - "JSON schema validation before writing"
+        - "Timestamp and previous state tracking"
+      consumes:
+        - "EpicState schema from shared interfaces"
+      interfaces:
+        - "update_epic_state(state: EpicState, updates: dict) -> None"
+
+    update-execute-ticket-completion-reporting:
+      provides:
+        - "Updated execute-ticket.md with completion report requirements"
+        - "Documentation of required and optional fields"
+        - "Examples for success/failure/blocked scenarios"
+      consumes:
+        - "TicketCompletionReport schema from define-sub-agent-lifecycle-protocol"
+      interfaces:
+        - "Sub-agent must return TicketCompletionReport structure"
+
+    add-wave-execution-algorithm:
+      provides:
+        - "Wave loop with ready ticket calculation"
+        - "Prioritization logic (critical first, dependency depth)"
+        - "Wait-for-any-completion with Task tool"
+      consumes:
+        - "calculate_ready_tickets() from implement-concurrency-control"
+        - "spawn_ticket_sub_agent() from define-sub-agent-lifecycle-protocol"
+        - "validate_completion_report() from implement-completion-report-validation"
+      interfaces:
+        - "Main wave execution loop algorithm"
+
+    add-orchestrator-integration-tests:
+      provides:
+        - "Integration tests for all coordination scenarios"
+        - "Test coverage for parallel execution, failures, recovery"
+      consumes:
+        - "All implemented functions from previous tickets"
+        - "Complete state machine and coordination logic"
+      interfaces:
+        - "Test suite validating end-to-end orchestration"
+
+tickets:
+  - id: update-execute-epic-state-machine
+    description: |
+      Add formal state machine documentation to execute-epic.md command file.
+
+      CONTEXT:
+      The execute-epic orchestrator currently lacks a formal state machine definition, leading to ambiguous state transitions and inconsistent state management. This ticket establishes the foundational state machine that all other coordination tickets depend on.
+
+      DELIVERABLES:
+      1. Document epic-level states in execute-epic.md:
+         - initializing: Creating epic branch, artifacts directory, baseline state
+         - ready_to_execute: Waiting to spawn next wave of tickets
+         - executing_wave: One or more sub-agents actively executing
+         - completed: All tickets complete, finalizing artifacts
+         - failed: Critical ticket failed, rollback if configured
+         - rolled_back: Changes reverted, epic branch deleted
+         - partial_success: Rollback disabled, preserving completed work
+
+      2. Document ticket-level states:
+         - pending: Waiting for dependencies
+         - queued: Dependencies met, ready to spawn
+         - executing: Sub-agent actively working
+         - validating: Orchestrator validating completion report
+         - completed: Ticket work complete, artifacts recorded
+         - failed: Execution or validation failed
+         - blocked: Cannot execute due to dependency failure
+
+      3. Define state transition rules:
+         - Valid transitions for each state
+         - Conditions that trigger each transition
+         - Actions to perform during transition
+
+      4. Document state update protocol:
+         - When to update epic-state.json (before/after operations)
+         - Consistency requirements and locking strategy
+         - Timestamp and previous state tracking requirements
+
+      ACCEPTANCE CRITERIA:
+      - Execute-epic.md contains complete state machine with all epic and ticket states
+      - All valid state transitions are documented with trigger conditions
+      - State update protocol specifies atomic update requirements
+      - Documentation includes examples of state transitions during epic execution
+    depends_on: []
+    critical: true
+    coordination_role: "Defines the state machine foundation that all other tickets use for state transitions and coordination"
+
+  - id: implement-concurrency-control
+    description: |
+      Implement concurrency control logic for parallel ticket execution.
+
+      CONTEXT:
+      The orchestrator needs to manage parallel sub-agent execution with resource limits. This ticket implements the MAX_CONCURRENT_TICKETS limit and the algorithm for calculating which tickets are ready to execute.
+
+      DELIVERABLES:
+      1. Add MAX_CONCURRENT_TICKETS constant (value: 3) to execute-epic.md
+         - Document rationale: balance parallel execution with resource limits
+
+      2. Implement calculate_ready_tickets() function:
+         - Input: current EpicState
+         - Logic: Find all pending tickets where all depends_on tickets are completed
+         - Output: sorted list of ready tickets
+
+      3. Add concurrency slot calculation logic:
+         - Count tickets in 'executing' or 'validating' states
+         - Calculate available_slots = MAX_CONCURRENT_TICKETS - executing_count
+         - Document how this limits wave spawning
+
+      4. Implement prioritization logic:
+         - Sort ready tickets by: critical first, then by dependency depth
+         - Dependency depth = longest chain of dependencies
+         - Document sorting algorithm in execute-epic.md
+
+      ACCEPTANCE CRITERIA:
+      - MAX_CONCURRENT_TICKETS constant is defined and documented
+      - calculate_ready_tickets() function correctly identifies tickets with satisfied dependencies
+      - Concurrency slot calculation prevents spawning more than MAX_CONCURRENT_TICKETS sub-agents
+      - Prioritization logic ensures critical tickets and longer dependency chains execute first
+    depends_on:
+      - update-execute-epic-state-machine
+    critical: true
+    coordination_role: "Provides ready ticket calculation that wave execution algorithm depends on"
+
+  - id: define-sub-agent-lifecycle-protocol
+    description: |
+      Define the complete sub-agent lifecycle protocol for ticket execution.
+
+      CONTEXT:
+      Sub-agents are spawned via Task tool but lack a standardized protocol for spawn parameters, completion reporting, and validation. This ticket establishes the contract between orchestrator and sub-agents.
+
+      DELIVERABLES:
+      1. Document spawn phase in execute-epic.md:
+         - Tool: Task tool with subagent_type: general-purpose
+         - Prompt construction: Read execute-ticket.md, inject ticket path, epic path, base commit SHA, session ID
+         - State updates: before spawn (queued), after spawn (executing with timestamp)
+         - Error handling: spawn failure -> ticket state = failed with spawn_error reason
+
+      2. Define TicketCompletionReport format:
+         - Required fields: ticket_id, status, branch_name, base_commit, final_commit, files_modified, test_suite_status, acceptance_criteria
+         - Optional fields: failure_reason, blocking_dependency, warnings, artifacts
+         - Document field types and validation rules
+         - Provide examples for completed/failed/blocked scenarios
+
+      3. Specify validation phase checks:
+         - Git verification: branch exists, final commit exists, commit is on branch
+         - Test suite status check (if not skipped)
+         - Acceptance criteria completeness check
+         - Document validation failure handling
+
+      4. Document monitoring strategy:
+         - Passive monitoring: wait for Task tool to return
+         - No polling: do NOT poll git or read files during execution
+         - Parallel tracking: track multiple sub-agents via Task tool futures
+
+      ACCEPTANCE CRITERIA:
+      - Spawn phase documentation includes all prompt construction details
+      - TicketCompletionReport format is completely specified with all fields
+      - Validation phase checks are enumerated and documented
+      - Monitoring strategy clarifies passive approach (no polling)
+    depends_on:
+      - update-execute-epic-state-machine
+    critical: true
+    coordination_role: "Defines TicketCompletionReport schema used by validation and execute-ticket tickets"
+
+  - id: implement-completion-report-validation
+    description: |
+      Implement validate_completion_report() function in orchestrator logic.
+
+      CONTEXT:
+      Sub-agents return completion reports that must be validated before marking tickets complete. This ticket implements the validation logic that verifies sub-agent claims.
+
+      DELIVERABLES:
+      1. Implement validate_completion_report() function:
+         - Input: Ticket object, completion report dict
+         - Output: ValidationResult with pass/fail and error messages
+
+      2. Add git verification checks:
+         - Execute: git rev-parse --verify refs/heads/[branch_name]
+         - Execute: git rev-parse --verify [final_commit]
+         - Execute: git branch --contains [final_commit] (verify commit is on branch)
+         - Handle errors: branch not found, commit not found, commit not on branch
+
+      3. Validate test suite status:
+         - Check test_suite_status is one of: passing, failing, skipped
+         - If status is 'failing', validation fails (unless explicitly allowed)
+         - Document test suite validation rules
+
+      4. Validate acceptance criteria format:
+         - Check acceptance_criteria is list of {criterion: str, met: bool}
+         - Verify all criteria have status (met or not met)
+         - Document required format
+
+      5. Add state update logic:
+         - Validation pass: ticket state = completed, update git_info, record timestamp
+         - Validation fail: ticket state = failed, record validation failure reason, do NOT update git_info
+
+      ACCEPTANCE CRITERIA:
+      - validate_completion_report() function performs all git verification checks
+      - Test suite status is validated according to defined rules
+      - Acceptance criteria format is validated
+      - State updates correctly handle validation pass and fail scenarios
+    depends_on:
+      - define-sub-agent-lifecycle-protocol
+    critical: true
+    coordination_role: "Provides completion validation that wave execution uses to transition tickets to completed state"
+
+  - id: add-error-recovery-workflows
+    description: |
+      Implement error recovery workflows for failure scenarios.
+
+      CONTEXT:
+      Epic execution can fail in multiple ways: critical ticket failures, non-critical failures, sub-agent spawn failures, and orchestrator crashes. This ticket implements recovery procedures for all failure scenarios.
+
+      DELIVERABLES:
+      1. Implement critical ticket failure handling:
+         - Detection: ticket with critical: true transitions to failed state
+         - If rollback_on_failure = true:
+           - Stop spawning new tickets immediately
+           - Wait for currently executing tickets to complete
+           - Execute execute_rollback() to delete epic and ticket branches
+           - Epic state = rolled_back
+         - If rollback_on_failure = false:
+           - Mark dependent tickets as blocked
+           - Continue executing independent tickets
+           - Epic state = partial_success
+
+      2. Implement non-critical ticket failure handling:
+         - Detection: ticket with critical: false transitions to failed state
+         - Mark dependent tickets as blocked (set blocking_dependency field)
+         - Continue executing independent tickets
+         - Epic can still reach completed state if all critical tickets succeed
+
+      3. Implement execute_rollback() function:
+         - Delete epic branch: git branch -D epic/[name]
+         - Delete all ticket branches: git branch -D ticket/* (created for this epic)
+         - Record rollback reason and completed tickets in epic-state.json
+         - Generate rollback report with failure details
+
+      4. Document orchestrator crash recovery:
+         - On restart: read epic-state.json to determine current state
+         - Tickets in 'executing' state are stale (sub-agent lost)
+         - Reset stale tickets to pending/queued based on dependencies
+         - Resume from current wave calculation
+         - Document epic-state.json as single source of truth for restart
+
+      5. Add sub-agent spawn retry logic:
+         - Max retries: 2
+         - Backoff: exponential (5s, 15s)
+         - After max retries: ticket state = failed with spawn_failed_after_retries reason
+
+      ACCEPTANCE CRITERIA:
+      - Critical ticket failures trigger appropriate rollback or partial success handling
+      - Non-critical failures mark dependent tickets as blocked
+      - execute_rollback() correctly deletes branches and updates state
+      - Orchestrator crash recovery resets stale executing tickets and resumes
+      - Sub-agent spawn failures retry with exponential backoff
+    depends_on:
+      - update-execute-epic-state-machine
+    critical: true
+    coordination_role: "Provides rollback and recovery procedures used by wave execution on failures"
+
+  - id: implement-base-commit-calculation
+    description: |
+      Implement calculate_base_commit() function for stacked branch strategy.
+
+      CONTEXT:
+      Tickets with dependencies must stack their branches on top of dependency work. This ticket implements the algorithm for determining the correct base commit for each ticket branch.
+
+      DELIVERABLES:
+      1. Implement calculate_base_commit() function:
+         - Input: Ticket object with depends_on list
+         - Output: Git SHA string to use as base commit
+
+      2. Handle no dependencies case:
+         - base_commit = epic.baseline_commit (epic branch HEAD when started)
+         - Rationale: independent ticket branches from epic baseline
+
+      3. Handle single dependency case:
+         - base_commit = dependency.git_info.final_commit
+         - Rationale: stack on top of dependency's work
+         - Validation: ensure dependency git_info exists
+
+      4. Handle multiple dependencies case:
+         - Strategy: find most recent final_commit among dependencies
+         - Option 1: use git merge-base to find common ancestor
+         - Option 2: use newest timestamp if commits are linear
+         - Rationale: stack on the most recent dependency work
+
+      5. Document edge cases:
+         - Missing git_info: fail with state inconsistency error
+         - Merge conflict potential: let git handle during branch creation, sub-agent reports failure if conflicts
+
+      ACCEPTANCE CRITERIA:
+      - calculate_base_commit() correctly handles no dependencies, single, and multiple dependencies
+      - Function validates dependency git_info exists before using
+      - Edge cases are documented and handled appropriately
+      - Function returns valid git SHA that exists in repository
+    depends_on:
+      - update-execute-epic-state-machine
+    critical: true
+    coordination_role: "Provides base commit calculation used by spawn logic to create stacked branches"
+
+  - id: define-git-workflow-strategy
+    description: |
+      Document complete git workflow strategy in execute-epic.md.
+
+      CONTEXT:
+      The orchestrator creates and manages multiple git branches (epic branch, ticket branches) during execution. The git workflow strategy must be explicitly defined to establish guardrails and ensure consistency across all autonomous agent work.
+
+      DELIVERABLES:
+      1. Document epic branch lifecycle:
+         - Created at initialization from current HEAD
+         - Name format: epic/[epic-name]
+         - Serves as baseline for all ticket branches
+         - All ticket branches merge into epic branch (not main)
+         - Pushed to remote as single human-facing deliverable
+
+      2. Document ticket branch strategy:
+         - Name format: ticket/[ticket-id]
+         - Created by sub-agents during ticket execution
+         - Stacked on dependencies via calculate_base_commit()
+         - Stay local (never pushed to remote)
+         - Merged into epic branch after validation
+
+      3. Document branch stacking rules:
+         - No dependencies: branch from epic.baseline_commit
+         - Single dependency: branch from dependency.git_info.final_commit
+         - Multiple dependencies: branch from most recent final_commit
+         - Dependencies must be validated before calculating base commit
+
+      4. Document merge workflow:
+         - Performed after all tickets reach completed state
+         - Use topological sort of dependency graph for merge order
+         - Merge ticket branches into epic branch (git merge ticket/[id])
+         - Fast-forward where possible, preserve commit history
+         - Verify merge success before marking epic complete
+
+      5. Document remote push strategy:
+         - Check if git remote exists (git remote -v)
+         - If remote exists: push epic branch only (git push -u origin epic/[name])
+         - Never push ticket branches (implementation details below API)
+         - No PR creation (project-agnostic, no main branch assumptions)
+         - Epic branch on remote is complete feature for human review
+
+      6. Document git state validation checkpoints:
+         - At initialization: verify working directory is clean
+         - Before ticket spawn: verify base commit exists
+         - After ticket completion: verify ticket branch and commit exist
+         - Before merge: verify all ticket branches exist locally
+         - After merge: verify epic branch contains all ticket commits
+         - Before push: verify remote exists and is reachable
+
+      ACCEPTANCE CRITERIA:
+      - Execute-epic.md documents complete epic branch lifecycle
+      - Ticket branch strategy clearly defines local-only branches
+      - Branch stacking rules match calculate_base_commit() implementation
+      - Merge workflow specifies dependency-ordered merging into epic branch
+      - Remote push strategy is project-agnostic (no PR assumptions)
+      - Git state validation checkpoints are enumerated
+    depends_on:
+      - update-execute-epic-state-machine
+      - implement-base-commit-calculation
+    critical: true
+    coordination_role: "Defines git workflow that all other tickets follow for branch creation, merging, and pushing"
+
+  - id: implement-ticket-branch-merging
+    description: |
+      Implement merge_ticket_branches() function to merge ticket branches into epic branch.
+
+      CONTEXT:
+      After all tickets complete, their branches must be merged into the epic branch in dependency order. This creates a single coherent branch with all feature work that can be pushed to remote.
+
+      DELIVERABLES:
+      1. Implement merge_ticket_branches() function:
+         - Input: EpicState with all tickets in completed state
+         - Output: None (merges branches, updates git state)
+
+      2. Calculate merge order:
+         - Perform topological sort of dependency graph
+         - Tickets with no dependencies merge first
+         - Dependent tickets merge after their dependencies
+         - Document algorithm for topological sort
+
+      3. Execute merges in order:
+         - Switch to epic branch: git checkout epic/[name]
+         - For each ticket in merge order:
+           - Merge ticket branch: git merge --no-ff ticket/[id]
+           - Verify merge succeeded (check exit code)
+           - Record merge in epic-state.json
+
+      4. Handle merge conflicts:
+         - If merge conflict occurs, fail the epic
+         - Record which ticket merge failed and why
+         - Document conflict resolution expectations
+         - Leave repository in clean state (abort merge)
+
+      5. Validate final epic branch state:
+         - Verify epic branch contains all ticket commits
+         - Count commits from baseline to HEAD
+         - Confirm all ticket final_commits are ancestors of epic HEAD
+         - Update epic-state.json with merge completion
+
+      ACCEPTANCE CRITERIA:
+      - merge_ticket_branches() performs topological sort for merge order
+      - Merges execute in correct dependency order
+      - Merge conflicts are detected and handled appropriately
+      - Final epic branch contains all ticket work
+      - Epic-state.json is updated with merge status
+    depends_on:
+      - define-git-workflow-strategy
+      - implement-base-commit-calculation
+    critical: true
+    coordination_role: "Provides ticket branch merging that wave execution calls after all tickets complete"
+
+  - id: implement-remote-push-logic
+    description: |
+      Implement push_epic_branch() function to push epic branch to remote if it exists.
+
+      CONTEXT:
+      If a git remote exists, the epic branch should be pushed as the single human-facing deliverable. This keeps ticket branches as implementation details below the API and presents one clean branch for review.
+
+      DELIVERABLES:
+      1. Implement push_epic_branch() function:
+         - Input: epic_branch name (e.g., "epic/user-auth")
+         - Output: boolean (true if pushed, false if no remote)
+
+      2. Check for git remote:
+         - Execute: git remote -v
+         - Parse output to detect if any remote exists
+         - If no remote: return false, log message, skip push
+         - If remote exists: proceed with push
+
+      3. Push epic branch:
+         - Execute: git push -u origin [epic_branch]
+         - Set upstream tracking branch
+         - Capture push output for logging
+         - Verify push succeeded (check exit code)
+
+      4. Handle push failures:
+         - Authentication failures: log error, mark epic as partial success
+         - Network failures: log error, mark epic as partial success
+         - Remote rejection: log error, include remote message
+         - Document failure handling strategy
+
+      5. Update epic-state.json:
+         - Record push attempt and result
+         - Include remote URL if successful
+         - Include failure reason if failed
+         - Timestamp the push operation
+
+      ACCEPTANCE CRITERIA:
+      - push_epic_branch() correctly detects presence of git remote
+      - Epic branch is pushed with upstream tracking if remote exists
+      - Push failures are handled gracefully without failing epic
+      - Epic-state.json records push status and results
+      - Function is project-agnostic (no main branch or PR assumptions)
+    depends_on:
+      - define-git-workflow-strategy
+      - implement-ticket-branch-merging
+    critical: false
+    coordination_role: "Provides remote push capability for presenting epic branch to humans"
+
+  - id: add-atomic-state-updates
+    description: |
+      Implement atomic epic-state.json updates with validation.
+
+      CONTEXT:
+      Epic-state.json is the single source of truth for orchestration. Updates must be atomic to prevent corruption and must validate schema before writing.
+
+      DELIVERABLES:
+      1. Implement update_epic_state() function:
+         - Input: current EpicState object, updates dict
+         - Strategy: read-modify-write with atomic rename
+         - Implementation: read state, apply updates, write to temp file, rename to epic-state.json
+
+      2. Add JSON schema validation:
+         - Define JSON schema for epic-state.json structure
+         - Validate epic-level required fields: epic_id, epic_branch, baseline_commit, status, started_at
+         - Validate ticket-level required fields: path, depends_on, critical, status, phase
+         - Fail update if schema validation fails
+
+      3. Add timestamp tracking:
+         - Include timestamp with every state change
+         - Update started_at when tickets move to executing
+         - Update completed_at when tickets move to completed
+         - Update epic completed_at when epic reaches completed state
+
+      4. Add previous state tracking:
+         - Preserve previous_phase field for debugging
+         - Record state transition history
+
+      5. Document consistency rules:
+         - Never update state while sub-agent is executing (wait for completion)
+         - Always validate before writing
+         - Use file locking or atomic rename to prevent concurrent writes
+
+      ACCEPTANCE CRITERIA:
+      - update_epic_state() implements atomic write with temp file + rename
+      - JSON schema validation prevents invalid state writes
+      - Timestamps are included with all state changes
+      - Previous state is preserved for debugging
+      - Concurrent update safety is ensured
+    depends_on:
+      - update-execute-epic-state-machine
+    critical: true
+    coordination_role: "Provides atomic state update function used by all tickets that modify epic-state.json"
+
+  - id: update-execute-ticket-completion-reporting
+    description: |
+      Update execute-ticket.md to require standardized completion reporting.
+
+      CONTEXT:
+      Sub-agents must return standardized completion reports so orchestrator can validate and coordinate. This ticket updates execute-ticket.md with completion report requirements.
+
+      DELIVERABLES:
+      1. Add completion report requirements to execute-ticket.md:
+         - Document TicketCompletionReport structure
+         - List all required fields with types and descriptions
+         - List all optional fields with usage guidance
+
+      2. Document required fields:
+         - ticket_id: identifier matching ticket file
+         - status: completed | failed | blocked
+         - branch_name: git branch created (e.g., ticket/auth-base)
+         - base_commit: SHA ticket was branched from
+         - final_commit: SHA of final commit (null if failed)
+         - files_modified: list of file paths changed
+         - test_suite_status: passing | failing | skipped
+         - acceptance_criteria: [{criterion: text, met: bool}]
+
+      3. Document optional fields:
+         - failure_reason: description if status = failed
+         - blocking_dependency: ticket-id if status = blocked
+         - warnings: list of non-fatal issues
+         - artifacts: future distributed execution support (document as optional/null)
+
+      4. Add completion report examples:
+         - Example 1: successful completion with passing tests
+         - Example 2: failure with error details
+         - Example 3: blocked due to dependency
+
+      5. Document validation expectations:
+         - Sub-agent must ensure all required fields are present
+         - Orchestrator will validate git claims (branch, commit existence)
+         - Test failures may cause validation failure
+
+      ACCEPTANCE CRITERIA:
+      - Execute-ticket.md documents complete TicketCompletionReport structure
+      - All required and optional fields are documented with types
+      - Examples provided for success, failure, and blocked scenarios
+      - Validation expectations are clearly stated
+    depends_on:
+      - define-sub-agent-lifecycle-protocol
+    critical: true
+    coordination_role: "Updates sub-agent instructions to produce reports matching orchestrator validation requirements"
+
+  - id: add-wave-execution-algorithm
+    description: |
+      Implement the main wave execution algorithm for parallel ticket orchestration.
+
+      CONTEXT:
+      This is the core orchestration loop that coordinates parallel ticket execution. It integrates all previous tickets (state machine, concurrency control, spawning, validation, error recovery) into a cohesive execution algorithm.
+
+      DELIVERABLES:
+      1. Implement wave loop initialization:
+         - Read epic YAML and parse tickets with dependencies
+         - Create dependency graph adjacency list
+         - Detect cycles and fail if found
+         - Initialize all tickets with status=pending, phase=not-started
+
+      2. Implement main wave loop (while tickets remain in pending/queued/executing):
+         - Calculate ready tickets using calculate_ready_tickets()
+         - Check for blocked tickets (dependencies failed)
+         - Prioritize ready tickets (critical first, dependency depth second)
+         - Calculate available concurrency slots
+         - Spawn sub-agents for ready tickets up to available slots
+         - Wait for at least one sub-agent completion
+         - Validate completion reports and update state
+         - Check epic failure conditions (critical ticket failed)
+         - Check epic completion (all tickets terminal)
+
+      3. Add wait-for-any-completion logic:
+         - Use Task tool to wait for any sub-agent to complete
+         - Return completion report from completed sub-agent
+         - Continue tracking other executing sub-agents
+
+      4. Implement epic failure handling:
+         - If critical ticket fails and rollback_on_failure = true: trigger rollback and break
+         - If critical ticket fails and rollback_on_failure = false: set partial_success
+         - Document failure condition checks
+
+      5. Implement epic completion logic:
+         - All tickets in terminal state (completed/failed/blocked)
+         - All critical tickets completed -> epic status = completed
+         - Any critical ticket failed -> epic status = partial_success
+
+      6. Implement finalization:
+         - Switch to epic branch: git checkout epic/[name]
+         - Merge all ticket branches using merge_ticket_branches()
+         - Commit all artifacts to epic branch
+         - Push epic branch to remote using push_epic_branch() if remote exists
+         - Generate comprehensive execution report
+
+      ACCEPTANCE CRITERIA:
+      - Wave loop correctly calculates ready tickets each iteration
+      - Concurrency slots are respected (never exceed MAX_CONCURRENT_TICKETS)
+      - Wait-for-any-completion enables parallel execution tracking
+      - Epic failure conditions properly trigger rollback or partial success
+      - Epic completion correctly determines final status
+      - Finalization merges ticket branches and pushes epic branch
+      - All git workflow steps execute in correct order
+    depends_on:
+      - implement-concurrency-control
+      - define-sub-agent-lifecycle-protocol
+      - implement-completion-report-validation
+      - add-error-recovery-workflows
+      - implement-base-commit-calculation
+      - add-atomic-state-updates
+      - update-execute-ticket-completion-reporting
+      - implement-ticket-branch-merging
+      - implement-remote-push-logic
+    critical: true
+    coordination_role: "Integrates all coordination components including git workflow into main execution algorithm"
+
+  - id: add-orchestrator-integration-tests
+    description: |
+      Add comprehensive integration tests for orchestrator coordination scenarios.
+
+      CONTEXT:
+      All coordination logic must be validated end-to-end with integration tests covering parallel execution, failures, and recovery scenarios.
+
+      DELIVERABLES:
+      1. Test parallel execution with 3 concurrent tickets:
+         - Create test epic with 5 independent tickets
+         - Verify MAX_CONCURRENT_TICKETS limit is respected
+         - Verify all tickets complete successfully
+         - Check epic-state.json reflects correct final state
+
+      2. Test critical ticket failure with rollback:
+         - Create test epic with critical ticket that fails
+         - Set rollback_on_failure = true
+         - Verify orchestrator stops spawning new tickets
+         - Verify epic branch and ticket branches are deleted
+         - Verify epic state = rolled_back
+
+      3. Test non-critical ticket failure with partial success:
+         - Create test epic with non-critical ticket that fails
+         - Set rollback_on_failure = false
+         - Verify dependent tickets marked as blocked
+         - Verify independent tickets continue executing
+         - Verify epic state = partial_success or completed
+
+      4. Test orchestrator crash recovery from state file:
+         - Create test epic, start execution
+         - Simulate crash by interrupting orchestrator
+         - Restart orchestrator, read epic-state.json
+         - Verify stale executing tickets reset to pending/queued
+         - Verify execution resumes correctly
+
+      5. Test complex dependency graphs:
+         - Diamond dependency: A -> B, A -> C, B -> D, C -> D
+         - Chain dependency: A -> B -> C -> D
+         - Independent clusters: (A -> B), (C -> D) with no cross-dependencies
+         - Verify correct dependency resolution and parallel execution
+
+      6. Test base commit calculation:
+         - Test no dependencies (branches from epic baseline)
+         - Test single dependency (branches from dependency final_commit)
+         - Test multiple dependencies (branches from most recent)
+
+      7. Test completion report validation:
+         - Test validation pass with valid report
+         - Test validation fail with missing branch
+         - Test validation fail with missing commit
+         - Test validation fail with failing tests
+
+      ACCEPTANCE CRITERIA:
+      - All test scenarios pass with correct behavior
+      - Tests validate state machine transitions
+      - Tests verify concurrency limits are enforced
+      - Tests confirm error recovery works as expected
+      - Tests cover all major coordination scenarios
+    depends_on:
+      - add-wave-execution-algorithm
+    critical: true
+    coordination_role: "Validates all coordination logic works correctly end-to-end"
