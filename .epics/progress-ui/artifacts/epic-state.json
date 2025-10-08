@@ -1,0 +1,136 @@
+{
+  "epic_id": "progress-ui",
+  "baseline_commit": "b49f01289cbebf09885dee5b8ff14b1346325e85",
+  "epic_branch": "epic/progress-ui",
+  "status": "completed",
+  "started_at": "2025-10-07T19:46:13.030302Z",
+  "tickets": {
+    "add-console-parameter-to-claude-runner": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-console-parameter-to-claude-runner.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "b49f01289cbebf09885dee5b8ff14b1346325e85",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "9d4738155a1bf25c4536a6d991f68d04f5b429f5"
+      },
+      "started_at": "2025-10-07T19:46:58.719918Z",
+      "completed_at": "2025-10-07T19:48:56.972411Z"
+    },
+    "add-spinner-to-create-epic-command": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-spinner-to-create-epic-command.md",
+      "depends_on": [
+        "add-console-parameter-to-claude-runner"
+      ],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "9d4738155a1bf25c4536a6d991f68d04f5b429f5",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "60c75b8eddf03a4d205e0e1f0dbf77c2fb3d79ff"
+      },
+      "started_at": "2025-10-07T19:49:18.602939Z",
+      "completed_at": "2025-10-07T19:51:36.509794Z"
+    },
+    "add-spinner-to-create-tickets-command": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-spinner-to-create-tickets-command.md",
+      "depends_on": [
+        "add-console-parameter-to-claude-runner"
+      ],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "9d4738155a1bf25c4536a6d991f68d04f5b429f5",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "80a77fcdd26a1a510ba2e9f2260a1ee1c3a79e0d"
+      },
+      "started_at": "2025-10-07T19:49:18.603136Z",
+      "completed_at": "2025-10-07T19:55:03.597117Z"
+    },
+    "add-spinner-to-execute-ticket-command": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-spinner-to-execute-ticket-command.md",
+      "depends_on": [
+        "add-console-parameter-to-claude-runner"
+      ],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "9d4738155a1bf25c4536a6d991f68d04f5b429f5",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "ffed0b225f26da6096b1cc868a2d85723f935164"
+      },
+      "started_at": "2025-10-07T19:49:18.603138Z",
+      "completed_at": "2025-10-07T19:57:33.018526Z"
+    },
+    "add-basic-spinner-to-execute-epic-command": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-basic-spinner-to-execute-epic-command.md",
+      "depends_on": [
+        "add-console-parameter-to-claude-runner"
+      ],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "9d4738155a1bf25c4536a6d991f68d04f5b429f5",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "e70c85ad0b745cfe216f4aed43add26776f71259"
+      },
+      "started_at": "2025-10-07T19:49:18.603139Z",
+      "completed_at": "2025-10-07T20:00:56.378437Z"
+    },
+    "implement-git-commit-watching-for-execute-epic": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/implement-git-commit-watching-for-execute-epic.md",
+      "depends_on": [
+        "add-basic-spinner-to-execute-epic-command"
+      ],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "e70c85ad0b745cfe216f4aed43add26776f71259",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "62a6427a0c16fac626263cf66c861821f14af1da"
+      },
+      "started_at": "2025-10-07T20:01:14.820907Z",
+      "completed_at": "2025-10-07T20:05:21.416806Z"
+    },
+    "add-commit-message-parsing-utility": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-commit-message-parsing-utility.md",
+      "depends_on": [
+        "implement-git-commit-watching-for-execute-epic"
+      ],
+      "critical": false,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "62a6427a0c16fac626263cf66c861821f14af1da",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "3592a3f6a1f0374f1490114e4bf985993f81ce2d"
+      },
+      "started_at": "2025-10-07T20:05:33.917027Z",
+      "completed_at": "2025-10-07T20:10:48.767664Z"
+    },
+    "add-no-live-updates-flag": {
+      "path": "/Users/kit/Code/buildspec/.epics/progress-ui/tickets/add-no-live-updates-flag.md",
+      "depends_on": [
+        "implement-git-commit-watching-for-execute-epic"
+      ],
+      "critical": false,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "62a6427a0c16fac626263cf66c861821f14af1da",
+        "branch_name": "epic/progress-ui",
+        "final_commit": "dc86f7b56e848d3e0f906b16db6c85af8ad59d00"
+      },
+      "started_at": "2025-10-07T20:05:33.917235Z",
+      "completed_at": "2025-10-07T20:12:57.520334Z"
+    }
+  },
+  "completed_at": "2025-10-07T20:12:57.520550Z"
+}

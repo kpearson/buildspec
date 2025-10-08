@@ -1,8 +1,17 @@
+*.pyc
+__pycache__/
 
 # Python bytecode
-__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
+# PyInstaller build artifacts
+build/
+dist/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/

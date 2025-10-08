@@ -1,0 +1,136 @@
+{
+  "epic_id": "epic-splitting",
+  "epic_branch": "epic/progress-ui",
+  "baseline_commit": "4d6fc268d1b7e5bcac82ac1609cfcb840e32ca72",
+  "epic_pr_url": null,
+  "status": "in-progress",
+  "started_at": "2025-10-07T00:00:00Z",
+  "session_id": "68b6c8af-f00c-4c68-967d-39e4af662ed8",
+  "tickets": {
+    "epic-validator-module": {
+      "path": ".epics/epic-splitting/tickets/epic-validator-module.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "4d6fc268d1b7e5bcac82ac1609cfcb840e32ca72",
+        "branch_name": "ticket/epic-validator-module",
+        "final_commit": "f33f7e393df519ece2f920f7d67cbfb93264aa20"
+      },
+      "started_at": "2025-10-07T00:00:00Z",
+      "completed_at": "2025-10-07T00:05:00Z"
+    },
+    "add-ticket-count-field": {
+      "path": ".epics/epic-splitting/tickets/add-ticket-count-field.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "4d6fc268d1b7e5bcac82ac1609cfcb840e32ca72",
+        "branch_name": "ticket/add-ticket-count-field",
+        "final_commit": "1c969b9ea7bc505c4ab4b05f50a545d99a94d3ed"
+      },
+      "started_at": "2025-10-07T00:00:00Z",
+      "completed_at": "2025-10-07T00:05:00Z"
+    },
+    "split-epic-specialist-command": {
+      "path": ".epics/epic-splitting/tickets/split-epic-specialist-command.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "4d6fc268d1b7e5bcac82ac1609cfcb840e32ca72",
+        "branch_name": "ticket/split-epic-specialist-command",
+        "final_commit": "c8b97ab929687d561cb917eda4f14a9aa8fbbc21"
+      },
+      "started_at": "2025-10-07T00:00:00Z",
+      "completed_at": "2025-10-07T00:05:00Z"
+    },
+    "prompts-build-split-epic": {
+      "path": ".epics/epic-splitting/tickets/prompts-build-split-epic.md",
+      "depends_on": ["split-epic-specialist-command"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "c8b97ab929687d561cb917eda4f14a9aa8fbbc21",
+        "branch_name": "ticket/split-epic-specialist-command",
+        "final_commit": "c0d162003a99001467f44a55eed3128a7244a3d7"
+      },
+      "started_at": "2025-10-07T00:05:00Z",
+      "completed_at": "2025-10-07T00:10:00Z"
+    },
+    "create-epic-split-workflow": {
+      "path": ".epics/epic-splitting/tickets/create-epic-split-workflow.md",
+      "depends_on": ["epic-validator-module", "prompts-build-split-epic"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "c0d162003a99001467f44a55eed3128a7244a3d7",
+        "branch_name": "ticket/create-epic-split-workflow",
+        "final_commit": "7c9c6279f79bd2fbddb9081b36c72802d426ec27"
+      },
+      "started_at": "2025-10-07T00:10:00Z",
+      "completed_at": "2025-10-07T00:15:00Z"
+    },
+    "subdirectory-creation-logic": {
+      "path": ".epics/epic-splitting/tickets/subdirectory-creation-logic.md",
+      "depends_on": ["create-epic-split-workflow"],
+      "critical": false,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["create-epic-split-workflow.completed"]
+    },
+    "archive-original-epic": {
+      "path": ".epics/epic-splitting/tickets/archive-original-epic.md",
+      "depends_on": ["create-epic-split-workflow"],
+      "critical": false,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["create-epic-split-workflow.completed"]
+    },
+    "split-edge-case-handling": {
+      "path": ".epics/epic-splitting/tickets/split-edge-case-handling.md",
+      "depends_on": ["create-epic-split-workflow"],
+      "critical": false,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["create-epic-split-workflow.completed"]
+    },
+    "split-result-display": {
+      "path": ".epics/epic-splitting/tickets/split-result-display.md",
+      "depends_on": ["create-epic-split-workflow", "subdirectory-creation-logic", "archive-original-epic"],
+      "critical": false,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["create-epic-split-workflow.completed", "subdirectory-creation-logic.completed", "archive-original-epic.completed"]
+    },
+    "integration-testing": {
+      "path": ".epics/epic-splitting/tickets/integration-testing.md",
+      "depends_on": ["create-epic-split-workflow", "subdirectory-creation-logic", "archive-original-epic", "split-result-display", "split-edge-case-handling"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["create-epic-split-workflow.completed", "subdirectory-creation-logic.completed", "archive-original-epic.completed", "split-result-display.completed", "split-edge-case-handling.completed"]
+    }
+  }
+}

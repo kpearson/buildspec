@@ -1,0 +1,136 @@
+name: progress-ui
+description: Add visual progress indicators to CLI commands during Claude headless operations
+context: |
+  Currently, users see no feedback while Claude is executing tasks, which can take minutes.
+  When running headless commands like `buildspec execute-epic` or `buildspec execute-ticket`,
+  the CLI appears frozen with no feedback. Users cannot tell if the command is still running,
+  what phase of execution is happening, or whether the process has hung.
+
+  This epic uses the existing `rich` library (already a dependency) to show spinners and status
+  updates during long-running operations. The implementation will be in two phases:
+  1. Basic spinner for all commands
+  2. Live git commit watching for execute-epic (more complex, separate tickets)
+
+objectives:
+  - Provide visual feedback during Claude CLI subprocess execution
+  - Show what phase of work is happening (building prompt, executing, waiting for response)
+  - For execute-epic: Show live updates as tickets complete by watching git commits
+  - Use existing rich library capabilities (no new dependencies)
+  - Maintain clean output that doesn't interfere with final results
+  - Support JSON output mode (progress UI should not interfere with JSON parsing)
+
+constraints:
+  - Must use existing rich>=13.0.0 dependency (no new dependencies)
+  - Spinner must not interfere with JSON output mode (write to stderr)
+  - Must work in both TTY and non-TTY environments (Rich auto-detects)
+  - Cannot parse Claude's streaming output (too complex)
+  - Must handle Ctrl+C interruption gracefully
+  - Selected spinner style is "bouncingBar" for maximum ASCII compatibility
+
+tickets:
+  - name: add-console-parameter-to-claude-runner
+    description: Update ClaudeRunner.execute() to accept optional Console parameter for spinner support
+    acceptance_criteria:
+      - ClaudeRunner.execute() accepts optional console parameter
+      - When console is provided, spinner shows during subprocess.run()
+      - Spinner text is "[bold cyan]Executing with Claude...[/bold cyan]"
+      - Spinner style is "bouncingBar" for ASCII compatibility
+      - Spinner automatically cleans up on completion or error
+      - When console is None, behavior is unchanged (backward compatible)
+      - Spinner uses console.status() context manager from rich
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/core/claude.py
+    dependencies: []
+
+  - name: add-spinner-to-create-epic-command
+    description: Pass console to ClaudeRunner in create-epic command to show spinner
+    acceptance_criteria:
+      - create_epic command passes console parameter to runner.execute()
+      - Existing success/error message logic is preserved
+      - Spinner shows while Claude creates epic
+      - No interference with final output messages
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/create_epic.py
+    dependencies:
+      - add-console-parameter-to-claude-runner
+
+  - name: add-spinner-to-create-tickets-command
+    description: Pass console to ClaudeRunner in create-tickets command to show spinner
+    acceptance_criteria:
+      - create_tickets command passes console parameter to runner.execute()
+      - Existing success/error message logic is preserved
+      - Spinner shows while Claude creates tickets
+      - No interference with final output messages
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/create_tickets.py
+    dependencies:
+      - add-console-parameter-to-claude-runner
+
+  - name: add-spinner-to-execute-ticket-command
+    description: Pass console to ClaudeRunner in execute-ticket command to show spinner
+    acceptance_criteria:
+      - execute_ticket command passes console parameter to runner.execute()
+      - Existing success/error message logic is preserved
+      - Spinner shows while Claude executes ticket
+      - No interference with final output messages
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/execute_ticket.py
+    dependencies:
+      - add-console-parameter-to-claude-runner
+
+  - name: add-basic-spinner-to-execute-epic-command
+    description: Add basic spinner to execute-epic command (foundation for live updates)
+    acceptance_criteria:
+      - execute_epic command passes console parameter to runner.execute()
+      - Basic spinner shows while Claude executes epic
+      - Existing success/error message logic is preserved
+      - No interference with final output messages
+      - Lays groundwork for live git updates (next ticket)
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/execute_epic.py
+    dependencies:
+      - add-console-parameter-to-claude-runner
+
+  - name: implement-git-commit-watching-for-execute-epic
+    description: Replace basic spinner with live git commit watching to show ticket completion in real-time
+    acceptance_criteria:
+      - Get initial git commit SHA before starting Claude execution
+      - Poll git log every 2 seconds during execution using threading
+      - When new commits appear, parse ticket name from commit message
+      - Update live display showing completed tickets with checkmarks
+      - Use rich.live.Live with table for multi-line status display
+      - Fall back to basic spinner if git watching fails
+      - Handle edge cases (no commits, git errors, non-git directory)
+      - Threading handles Claude subprocess in background
+      - Clean cleanup on completion or error
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/execute_epic.py
+    dependencies:
+      - add-basic-spinner-to-execute-epic-command
+
+  - name: add-commit-message-parsing-utility
+    description: Create utility function to parse ticket names from git commit messages
+    acceptance_criteria:
+      - Function extracts ticket name from commit message
+      - Handles multiple commit message formats
+      - Returns ticket name or fallback to commit SHA
+      - Parses structured commit messages (feat:, fix:, etc.)
+      - Can extract from commit body if needed
+      - Well-tested with various commit message patterns
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/execute_epic.py
+    dependencies:
+      - implement-git-commit-watching-for-execute-epic
+
+  - name: add-no-live-updates-flag
+    description: Add --no-live-updates flag to execute-epic to disable git watching and use basic spinner
+    acceptance_criteria:
+      - execute_epic command accepts --no-live-updates flag
+      - When flag is set, use basic spinner instead of git watching
+      - Default behavior is live updates enabled
+      - Flag is documented in command help text
+      - Useful for CI environments or when git polling overhead is undesirable
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/commands/execute_epic.py
+    dependencies:
+      - implement-git-commit-watching-for-execute-epic
