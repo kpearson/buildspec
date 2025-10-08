@@ -1161,6 +1161,320 @@ Ticket branch merging integrates with:
 - Topological sort for dependency ordering
 - Validation checks for merge success
 
+## Remote Push Logic
+
+### push_epic_branch() Function
+
+**Purpose:** Push epic branch to remote if remote exists.
+
+**Input:** Epic branch name (e.g., "epic/user-authentication")
+
+**Output:** Boolean (true if pushed, false if no remote or push failed)
+
+**Design:** Project-agnostic (no assumptions about main branch, PR workflow, or remote structure)
+
+**Algorithm:**
+
+```python
+def push_epic_branch(state: EpicState) -> bool:
+    """
+    Push epic branch to remote if remote exists.
+
+    Returns True if pushed successfully, False otherwise.
+
+    Does NOT fail epic on push failure (marks partial_success instead).
+    """
+    epic_branch = state.epic_branch
+
+    logger.info(f"Checking for git remote to push {epic_branch}...")
+
+    # 1. Check if remote exists
+    has_remote, remote_url = check_remote_exists()
+
+    if not has_remote:
+        logger.info("No git remote configured. Skipping push.")
+        state.epic_pr_url = None
+        update_epic_state(state, {})
+        return False
+
+    logger.info(f"Git remote found: {remote_url}. Pushing {epic_branch}...")
+
+    # 2. Push epic branch with upstream tracking
+    push_result = execute_push(epic_branch, remote_url)
+
+    # 3. Update state with push result
+    update_state_after_push(state, push_result)
+
+    return push_result.success
+```
+
+### Check Remote Exists
+
+**Purpose:** Detect if git remote is configured.
+
+**Implementation:**
+
+```python
+def check_remote_exists() -> Tuple[bool, Optional[str]]:
+    """
+    Check if git remote exists.
+
+    Returns:
+        (has_remote, remote_url) tuple
+    """
+    result = subprocess.run(
+        ['git', 'remote', '-v'],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        # No remote or git error
+        logger.warning(f"git remote command failed: {result.stderr}")
+        return (False, None)
+
+    output = result.stdout.strip()
+
+    if not output:
+        # No remotes configured
+        logger.info("No git remotes configured")
+        return (False, None)
+
+    # Parse remote URL (first remote, fetch URL)
+    lines = output.split('\n')
+    for line in lines:
+        if '(fetch)' in line:
+            parts = line.split()
+            if len(parts) >= 2:
+                remote_name = parts[0]  # Usually 'origin'
+                remote_url = parts[1]
+                logger.info(f"Found remote '{remote_name}': {remote_url}")
+                return (True, remote_url)
+
+    # Remote exists but couldn't parse
+    return (True, "unknown")
+```
+
+### Execute Push
+
+**Purpose:** Push epic branch to remote with upstream tracking.
+
+**Implementation:**
+
+```python
+def execute_push(epic_branch: str, remote_url: str) -> PushResult:
+    """
+    Push epic branch to remote.
+
+    Uses -u flag to set upstream tracking branch.
+
+    Returns PushResult with success status and details.
+    """
+    # Attempt push with upstream tracking
+    result = subprocess.run(
+        ['git', 'push', '-u', 'origin', epic_branch],
+        capture_output=True,
+        text=True,
+        timeout=60  # 60 second timeout for network operations
+    )
+
+    if result.returncode == 0:
+        # Push succeeded
+        logger.info(f"Successfully pushed {epic_branch} to remote")
+        logger.debug(f"Push output: {result.stdout}")
+
+        return PushResult(
+            success=True,
+            remote_url=remote_url,
+            branch=epic_branch,
+            error=None
+        )
+
+    else:
+        # Push failed
+        error_msg = result.stderr.strip()
+        logger.error(f"Push failed for {epic_branch}: {error_msg}")
+
+        # Categorize failure
+        failure_type = categorize_push_failure(error_msg)
+
+        return PushResult(
+            success=False,
+            remote_url=remote_url,
+            branch=epic_branch,
+            error=error_msg,
+            failure_type=failure_type
+        )
+```
+
+### Categorize Push Failure
+
+**Purpose:** Identify type of push failure for better error messages.
+
+**Implementation:**
+
+```python
+def categorize_push_failure(error_msg: str) -> str:
+    """
+    Categorize push failure based on error message.
+
+    Returns failure type: 'authentication', 'network', 'rejected', 'unknown'
+    """
+    error_lower = error_msg.lower()
+
+    # Authentication failures
+    if any(keyword in error_lower for keyword in [
+        'authentication', 'permission denied', 'could not read',
+        'invalid credentials', 'access denied'
+    ]):
+        return 'authentication'
+
+    # Network failures
+    if any(keyword in error_lower for keyword in [
+        'could not resolve host', 'connection refused', 'network',
+        'timeout', 'failed to connect'
+    ]):
+        return 'network'
+
+    # Remote rejection (e.g., protected branch, force push required)
+    if any(keyword in error_lower for keyword in [
+        'rejected', 'protected branch', 'non-fast-forward',
+        'updates were rejected'
+    ]):
+        return 'rejected'
+
+    return 'unknown'
+```
+
+### Update State After Push
+
+**Purpose:** Record push result in epic-state.json.
+
+**Implementation:**
+
+```python
+def update_state_after_push(state: EpicState, push_result: PushResult):
+    """
+    Update epic state with push result.
+
+    If push succeeded: record remote URL
+    If push failed: mark epic as partial_success
+    """
+    push_timestamp = datetime.now(UTC).isoformat()
+
+    if push_result.success:
+        # Push succeeded
+        state.epic_pr_url = None  # No PR created (project-agnostic)
+        state.push_status = 'pushed'
+        state.push_timestamp = push_timestamp
+        state.remote_url = push_result.remote_url
+
+        logger.info(f"Epic branch pushed successfully at {push_timestamp}")
+
+    else:
+        # Push failed (mark partial_success)
+        state.status = 'partial_success'
+        state.failure_reason = f'push_failed_{push_result.failure_type}: {push_result.error}'
+        state.push_status = 'failed'
+        state.push_timestamp = push_timestamp
+
+        logger.warning(
+            f"Epic marked as partial_success due to push failure. "
+            f"All tickets completed locally, but epic branch not pushed to remote."
+        )
+
+    update_epic_state(state, {})
+```
+
+### Push Examples
+
+**Example 1: Successful Push**
+
+```python
+# Remote exists, push succeeds
+has_remote = True
+push_result = execute_push('epic/user-auth', 'git@github.com:user/repo.git')
+# push_result.success = True
+
+# State updates:
+# state.epic_pr_url = None
+# state.push_status = 'pushed'
+# state.status = 'completed'
+
+# Output: "Successfully pushed epic/user-auth to remote"
+```
+
+**Example 2: No Remote**
+
+```python
+# No remote configured
+has_remote = False
+
+push_epic_branch(state)
+# Returns: False
+
+# State updates:
+# state.epic_pr_url = None
+# state.push_status = 'skipped'
+# state.status = 'completed'
+
+# Output: "No git remote configured. Skipping push."
+```
+
+**Example 3: Authentication Failure**
+
+```python
+# Remote exists, push fails (authentication)
+has_remote = True
+push_result = execute_push('epic/user-auth', 'git@github.com:user/repo.git')
+# push_result.success = False
+# push_result.failure_type = 'authentication'
+# push_result.error = "Permission denied (publickey)"
+
+# State updates:
+# state.status = 'partial_success'
+# state.failure_reason = 'push_failed_authentication: Permission denied (publickey)'
+# state.push_status = 'failed'
+
+# Output: "Push failed: authentication error. Epic marked as partial_success."
+```
+
+**Example 4: Network Failure**
+
+```python
+# Remote exists, push fails (network)
+push_result.failure_type = 'network'
+push_result.error = "Could not resolve host: github.com"
+
+# State updates:
+# state.status = 'partial_success'
+# state.failure_reason = 'push_failed_network: Could not resolve host'
+# state.push_status = 'failed'
+
+# Output: "Push failed: network error. All work completed locally."
+```
+
+### Project-Agnostic Design
+
+**No PR Creation:**
+
+- Function does NOT create pull requests
+- No assumptions about GitHub, GitLab, Bitbucket
+- No assumptions about main/master branch
+- Epic branch on remote is the deliverable (humans create PR if needed)
+
+**No Main Branch Assumptions:**
+
+- Does NOT merge epic branch into main
+- Does NOT push to main branch
+- Does NOT assume main branch exists or is named 'main'/'master'
+
+**Graceful Degradation:**
+
+- If no remote: epic completes successfully (work done locally)
+- If push fails: epic marked partial_success (work preserved locally)
+- Never fail epic due to push issues (push is optional final step)
+
 ## Epic File Format
 
 The epic file should contain a TOML configuration block defining the ticket
