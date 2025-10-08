@@ -266,3 +266,38 @@ IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the
 tool.
 """
         return prompt
+
+    def build_split_epic(
+        self, original_epic_path: str, spec_path: str, ticket_count: int
+    ) -> str:
+        """Create specialist prompt for splitting oversized epics.
+
+        Args:
+            original_epic_path: Absolute path to original epic YAML file
+            spec_path: Absolute path to spec document
+            ticket_count: Number of tickets in original epic
+
+        Returns:
+            Formatted prompt string for Claude subprocess
+
+        Raises:
+            FileNotFoundError: If split-epic.md command file missing
+        """
+        # Load the split-epic command template
+        command_content = self._read_command("split-epic")
+
+        # Build the context section
+        prompt = f"""Read the split-epic command instructions and execute the Task Agent Instructions.
+
+CONTEXT:
+Original epic path: {original_epic_path}
+Spec document path: {spec_path}
+Ticket count: {ticket_count}
+Soft limit: 12 tickets per epic (ideal)
+Hard limit: 15 tickets per epic (maximum)
+
+{command_content}
+
+Execute the split-epic analysis and creation process as described in the Task Agent Instructions.
+"""
+        return prompt
