@@ -185,6 +185,157 @@ After Crash (restart from epic-state.json):
   7. Continue normal execution
 ```
 
+## Concurrency Control
+
+The orchestrator manages parallel ticket execution with resource limits to balance parallel execution benefits with system resource constraints.
+
+### Maximum Concurrent Tickets
+
+**Constant:** MAX_CONCURRENT_TICKETS = 3
+
+**Rationale:** Balances parallel execution benefits with system resource limits. Running more than 3 Claude sub-agents simultaneously can:
+
+- Consume excessive memory and CPU
+- Create too many concurrent git operations
+- Reduce individual sub-agent performance
+- Make error debugging harder
+
+### Concurrency Slot Calculation
+
+Before spawning new sub-agents, calculate available concurrency slots:
+
+```python
+executing_count = count tickets with status in ['executing', 'validating']
+available_slots = MAX_CONCURRENT_TICKETS - executing_count
+
+if available_slots > 0:
+    # Can spawn up to available_slots more sub-agents
+    spawn_count = min(available_slots, len(ready_tickets))
+else:
+    # Wait for at least one sub-agent to complete
+    wait_for_any_completion()
+```
+
+### calculate_ready_tickets() Algorithm
+
+**Purpose:** Determine which tickets are ready to execute based on dependency completion.
+
+**Input:** EpicState object with all tickets and their current states
+
+**Output:** Sorted list of Ticket objects ready for execution
+
+**Algorithm:**
+
+```python
+def calculate_ready_tickets(state: EpicState) -> List[Ticket]:
+    ready_tickets = []
+
+    for ticket_id, ticket_state in state.tickets.items():
+        # Only consider pending tickets
+        if ticket_state.status != 'pending':
+            continue
+
+        # Check if all dependencies are completed
+        all_deps_met = True
+        any_dep_failed = False
+
+        for dep_id in ticket_state.depends_on:
+            dep_state = state.tickets[dep_id]
+
+            if dep_state.status != 'completed':
+                all_deps_met = False
+
+            if dep_state.status == 'failed':
+                any_dep_failed = True
+                break
+
+        # If any dependency failed, mark ticket as blocked
+        if any_dep_failed:
+            ticket_state.status = 'blocked'
+            ticket_state.blocking_dependency = dep_id
+            update_epic_state(state, {ticket_id: ticket_state})
+            continue
+
+        # If all dependencies met, ticket is ready
+        if all_deps_met:
+            ready_tickets.append(ticket_state)
+
+    # Prioritize ready tickets
+    return prioritize_tickets(ready_tickets)
+```
+
+### Prioritization Algorithm
+
+**Purpose:** Sort ready tickets to execute critical tickets and long dependency chains first.
+
+**Algorithm:**
+
+```python
+def prioritize_tickets(tickets: List[Ticket]) -> List[Ticket]:
+    def priority_key(ticket: Ticket) -> tuple:
+        # Primary sort: critical tickets first (critical=True sorts before False)
+        critical_priority = 0 if ticket.critical else 1
+
+        # Secondary sort: dependency depth (longer chains first, so negate depth)
+        dep_depth = calculate_dependency_depth(ticket)
+
+        # Return tuple for sorting (lower values sort first)
+        return (critical_priority, -dep_depth)
+
+    return sorted(tickets, key=priority_key)
+
+def calculate_dependency_depth(ticket: Ticket) -> int:
+    """Calculate longest chain from ticket to leaf dependency."""
+    if not ticket.depends_on:
+        return 0
+
+    max_depth = 0
+    for dep_id in ticket.depends_on:
+        dep_ticket = state.tickets[dep_id]
+        dep_depth = calculate_dependency_depth(dep_ticket)
+        max_depth = max(max_depth, dep_depth)
+
+    return max_depth + 1
+```
+
+### Example: Wave Execution with Concurrency Control
+
+**Epic with 7 tickets:**
+
+- A (critical, no dependencies)
+- B (non-critical, no dependencies)
+- C (critical, depends on A)
+- D (non-critical, depends on A)
+- E (critical, depends on A, B)
+- F (non-critical, depends on C)
+- G (non-critical, depends on D, E)
+
+**Wave 1:** (all pending, no completed dependencies yet)
+
+- Ready tickets: A (critical, depth 0), B (non-critical, depth 0)
+- Prioritization: A (critical) before B (non-critical)
+- Spawn: A, B (2 of 3 slots used)
+
+**Wave 2:** (A completed)
+
+- Ready tickets: C (critical, depth 1), D (non-critical, depth 1)
+- Prioritization: C (critical) before D
+- Available slots: 3 - 1 (B still executing) = 2 slots
+- Spawn: C, D (all 3 slots now used: B, C, D)
+
+**Wave 3:** (B, C completed)
+
+- Ready tickets: E (critical, depth 2), F (non-critical, depth 2)
+- Prioritization: E (critical) before F
+- Available slots: 3 - 1 (D still executing) = 2 slots
+- Spawn: E, F (all 3 slots used: D, E, F)
+
+**Wave 4:** (D, E, F completed)
+
+- Ready tickets: G (non-critical, depth 3)
+- Available slots: 3 - 0 = 3 slots
+- Spawn: G
+
 ## Epic State File Structure
 
 The orchestrator creates an `artifacts/` directory alongside the epic file and
