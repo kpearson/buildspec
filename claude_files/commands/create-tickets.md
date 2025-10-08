@@ -52,11 +52,21 @@ You are creating individual tickets from an epic file. Your task is to:
    - If validation fails, STOP and report the validation errors
    - Only proceed if all pre-flight checks pass
 
-1. Read the ticket template (if available):
-   - Check for template at: ~/.claude/templates/planning-ticket-template.md
-   - If template exists, use it as the base structure
-   - Otherwise, create tickets with standard markdown format
-   - Understand the template structure and placeholder sections
+1. Create comprehensive ticket structure:
+   - Each ticket must be a detailed, self-contained planning document
+   - Use the following structure (whether template exists or not):
+     * Title and ID
+     * Issue Summary (2-3 sentences)
+     * User Story (As a... I want... So that...)
+     * Acceptance Criteria (detailed, specific requirements)
+     * Technical Implementation Details
+     * File Modifications (with actual paths from epic)
+     * Integration Points (with dependencies)
+     * Error Handling Strategy
+     * Testing Strategy (with actual test commands)
+     * Dependencies (upstream and downstream)
+   - Do NOT create minimal tickets with just title + description
+   - Each ticket should be 50-150 lines of detailed planning
 
 2. Read and parse the epic file at: [epic-file-path]
    - Detect epic format (auto-detect based on fields present):
@@ -81,57 +91,59 @@ You are creating individual tickets from an epic file. Your task is to:
    - Include proper dependency references from depends_on OR dependencies field
    - Use ticket ID from "id" OR "name" field (must be git-branch-friendly)
 
-4. Template population process using planning-ticket-template.md:
+4. Create detailed ticket content for each section:
 
-   Replace template placeholders with specific content:
+   **TITLE AND ID**:
+   - Use ticket name/id from epic (must be git-branch-friendly)
+   - Add descriptive subtitle based on ticket role in epic
 
-   TITLE SECTION:
-   - [COMPONENT/MODULE]: Determine component from epic architecture and ticket role
-   - [Short Descriptive Title]: Create specific title from ticket ID and purpose
-   - Ticket ID should be descriptive and usable as a git branch name (lowercase, hyphen-separated)
-
-   ISSUE SUMMARY:
-   - Replace placeholder with concise 1-2 sentence description
+   **ISSUE SUMMARY** (2-3 sentences):
+   - Concise description of what this ticket accomplishes
    - Based on ticket's specific role within the epic
+   - Reference epic objectives and how this ticket contributes
 
-   STORY SECTION:
-   - [user/developer/system]: Derive from epic stakeholders and ticket context
-   - [goal/requirement]: Extract from ticket's role in achieving epic goals
-   - [benefit/reason]: Connect to epic success criteria and user outcomes
+   **USER STORY**:
+   - As a [developer/user/system]: Derive from epic context
+   - I want [specific goal]: Extract from ticket description and acceptance criteria
+   - So that [benefit]: Connect to epic objectives and success criteria
 
-   ACCEPTANCE CRITERIA:
-   - Core Requirements: Create 3-5 specific requirements for this ticket
-   - Replace generic placeholders with actual functional requirements
-   - Include error handling, logging, and observability specific to this ticket
+   **ACCEPTANCE CRITERIA** (detailed):
+   - Expand each acceptance criterion from epic into specific, testable requirement
+   - Include error handling, logging, and observability requirements
+   - Add validation requirements (input validation, state validation, etc.)
+   - Include performance criteria if relevant
+   - Specify test coverage requirements
 
-   INTEGRATION POINTS:
-   - Replace placeholders with actual dependencies from epic
-   - Include specific file/line references where integration will happen
-   - Add feature flag control and fallback mechanisms
+   **TECHNICAL IMPLEMENTATION**:
+   - List files to modify from epic files_to_modify field (actual paths!)
+   - Describe code structure using epic context and constraints
+   - Specify classes/functions to create (with actual names from epic)
+   - Include import paths and module structure
+   - Reference architectural patterns from epic constraints
 
-   CURRENT/NEW FLOW:
-   - BEFORE: Describe current system state relevant to this ticket
-   - AFTER: Describe new functionality this ticket will implement
-   - Use actual code examples, not placeholder pseudocode
+   **INTEGRATION POINTS**:
+   - List dependencies from epic (actual ticket IDs)
+   - Specify which interfaces/APIs this ticket provides for other tickets
+   - Specify which interfaces/APIs this ticket consumes from dependencies
+   - Include specific file/line references where integration happens
 
-   TECHNICAL DETAILS:
-   - File Modifications: Specify actual files and line ranges to modify
-   - Implementation Details: Provide real code structure with project-specific details
-   - Integration with Existing Code: Use actual import paths and module names
+   **ERROR HANDLING**:
+   - Define specific exception classes for this ticket's domain
+   - Specify error messages and error codes
+   - Define logging strategy (what to log, at what level)
+   - Include retry/fallback strategies if applicable
 
-   ERROR HANDLING STRATEGY:
-   - Create specific exception classes and error handling for this ticket
-   - Use actual logging patterns and error codes from the project
+   **TESTING STRATEGY**:
+   - Specify test framework (infer from files_to_modify: tests/epic/test_*.py → pytest)
+   - Provide actual test commands (e.g., "uv run pytest tests/epic/test_models.py")
+   - List specific test scenarios to implement
+   - Include unit tests, integration tests as appropriate
+   - NO generic xtest patterns - use real test names
 
-   TESTING STRATEGY:
-   - Replace xtest patterns with actual test names and commands
-   - Use real test framework commands (pytest, npm test, etc.)
-   - Provide specific test scenarios for this ticket's functionality
-
-   DEPENDENCIES SECTION:
-   - Upstream Dependencies: List actual tickets this depends on from epic
-   - Downstream Dependencies: List tickets that depend on this one
-   - Use actual ticket IDs and paths from the epic
+   **DEPENDENCIES**:
+   - Upstream: List tickets from epic dependencies/depends_on field
+   - Downstream: Identify tickets that will depend on this one
+   - Explain what this ticket provides for dependents
 
 5. Ensure ticket consistency:
    - All tickets reference the same epic properly
