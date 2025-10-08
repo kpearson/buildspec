@@ -170,15 +170,19 @@ IMPORTANT:
   * Be descriptive of the work (e.g., "add-user-authentication", not "ticket-1")
   * Suitable for use as git branch names
   * Avoid generic names like "task-1", "feature-2", etc.
-- CRITICAL: Use real project specifics from epic:
-  * Actual framework names from epic (pytest, not "test_framework")
-  * Actual commands from epic or infer from project ("uv run pytest", not "run tests")
-  * Actual module names from files_to_modify (myproject.auth, not [module])
-  * Actual file paths from epic files_to_modify field
-  * Specific languages from project structure (python, typescript, not [language])
-  * Real test names and commands, no xtest patterns
-  * Specific component/module names from epic context
-  * Extract technical details from acceptance_criteria field
+- CRITICAL: Extract ALL available details from epic for rich tickets:
+  * Epic context: Use "context" field for project background and architecture
+  * Epic objectives: Use "objectives" field for high-level goals
+  * Epic constraints: Use "constraints" field for technical requirements
+  * Ticket acceptance_criteria: Expand these into detailed functional requirements
+  * Ticket files_to_modify: Use these as actual file paths (not placeholders!)
+  * Ticket description: This is the WHAT - expand it into detailed HOW in ticket
+  * Project structure: Infer framework from files_to_modify paths
+  * Test commands: If files_to_modify includes test files, infer test framework
+  * Languages: Infer from file extensions (.py → Python, .ts → TypeScript)
+  * Module names: Extract from files_to_modify paths (buildspec/epic/models.py → buildspec.epic.models)
+  * Component names: Derive from ticket description and files_to_modify
+  * NO generic placeholders like [module], [language], xtest, [COMPONENT]
 ```
 
 ## Example Output

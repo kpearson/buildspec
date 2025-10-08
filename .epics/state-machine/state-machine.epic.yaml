@@ -1,0 +1,406 @@
+name: state-machine
+description: Replace LLM-driven coordination with a Python state machine for deterministic epic execution
+context: |
+  Replace LLM-driven coordination with a Python state machine that enforces
+  structured execution of epic tickets. The state machine acts as a programmatic
+  gatekeeper, enforcing precise git strategies (stacked branches with final
+  collapse), state transitions, and merge correctness while the LLM focuses solely
+  on implementing ticket requirements.
+
+  The current execute-epic approach leaves too much coordination logic to the LLM
+  orchestrator, leading to inconsistent execution quality, no enforcement of
+  invariants, state drift, non-deterministic behavior, and debugging difficulties.
+
+  Core Insight: LLMs are excellent at creative problem-solving (implementing
+  features, fixing bugs) but poor at following strict procedural rules
+  consistently. Invert the architecture: State machine handles procedures, LLM
+  handles problems.
+
+  Git Strategy Summary:
+  - Tickets execute synchronously (one at a time)
+  - Each ticket branches from previous ticket's final commit (true stacking)
+  - Epic branch stays at baseline during execution
+  - After all tickets complete, collapse all branches into epic branch (squash merge)
+  - Push epic branch to remote for human review
+
+objectives:
+  - Deterministic State Transitions: Python code enforces state machine rules, LLM cannot bypass gates
+  - Git Strategy Enforcement: Stacked branch creation, base commit calculation, and merge order handled by code
+  - Validation Gates: Automated checks before allowing state transitions (branch exists, tests pass, etc.)
+  - LLM Interface Boundary: Clear contract between state machine (coordinator) and LLM (worker)
+  - Auditable Execution: State machine logs all transitions and gate checks for debugging
+  - Resumability: State machine can resume from epic-state.json after crashes
+
+constraints:
+  - State machine written in Python with explicit state classes and transition rules
+  - LLM agents interact with state machine via CLI commands only (no direct state file manipulation)
+  - Git operations (branch creation, base commit calculation, merging) are deterministic and tested
+  - Validation gates automatically verify LLM work before accepting state transitions
+  - Epic execution produces identical git structure on every run (given same tickets)
+  - State machine can resume mid-epic execution from state file
+  - Integration tests verify state machine enforces all invariants
+  - State file (epic-state.json) is private to state machine
+  - Synchronous execution enforced (concurrency = 1)
+  - Squash merge strategy for clean epic branch history
+
+tickets:
+  - name: create-state-enums-and-models
+    description: Define TicketState and EpicState enums, plus core data classes (Ticket, GitInfo, EpicContext)
+    acceptance_criteria:
+      - TicketState enum with states: PENDING, READY, BRANCH_CREATED, IN_PROGRESS, AWAITING_VALIDATION, COMPLETED, FAILED, BLOCKED
+      - EpicState enum with states: INITIALIZING, EXECUTING, MERGING, FINALIZED, FAILED, ROLLED_BACK
+      - Ticket dataclass with all required fields (id, path, title, depends_on, critical, state, git_info, etc.)
+      - GitInfo dataclass with branch_name, base_commit, final_commit
+      - AcceptanceCriterion dataclass for tracking acceptance criteria
+      - GateResult dataclass for gate check results
+      - All classes use dataclasses with proper type hints
+      - Models are in buildspec/epic/models.py
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/models.py
+    dependencies: []
+
+  - name: create-gate-interface-and-protocol
+    description: Define TransitionGate protocol and GateResult for validation gates
+    acceptance_criteria:
+      - TransitionGate protocol with check() method signature
+      - GateResult dataclass with passed, reason, metadata fields
+      - Clear documentation on gate contract
+      - Base gate implementation for testing
+      - Gates are in buildspec/epic/gates.py
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/gates.py
+    dependencies:
+      - create-state-enums-and-models
+
+  - name: implement-git-operations-wrapper
+    description: Create GitOperations class wrapping git commands with error handling
+    acceptance_criteria:
+      - GitOperations class with methods: create_branch, push_branch, delete_branch, get_commits_between, commit_exists, commit_on_branch, find_most_recent_commit, merge_branch
+      - All git operations use subprocess with proper error handling
+      - GitError exception class for git operation failures
+      - Methods return clean data (SHAs, branch names, commit info)
+      - Merge operations support squash strategy
+      - Git operations are in buildspec/epic/git_operations.py
+      - Unit tests for git operations with mock git commands
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/git_operations.py
+    dependencies: []
+
+  - name: implement-state-file-persistence
+    description: Add state file loading and atomic saving to state machine
+    acceptance_criteria:
+      - State machine can save epic-state.json atomically (write to temp, then rename)
+      - State machine can load state from epic-state.json for resumption
+      - State file includes epic metadata (id, branch, baseline_commit, started_at)
+      - State file includes all ticket states with git_info
+      - JSON schema validation on load
+      - Proper error handling for corrupted state files
+      - State file created in epic_dir/artifacts/epic-state.json
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - create-state-enums-and-models
+
+  - name: implement-dependencies-met-gate
+    description: Implement DependenciesMetGate to verify all ticket dependencies are COMPLETED
+    acceptance_criteria:
+      - DependenciesMetGate checks all dependencies are in COMPLETED state
+      - Returns GateResult with passed=True if all dependencies met
+      - Returns GateResult with passed=False and reason if any dependency not complete
+      - Handles tickets with no dependencies (always pass)
+      - Handles tickets with multiple dependencies
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/gates.py
+    dependencies:
+      - create-gate-interface-and-protocol
+
+  - name: implement-create-branch-gate
+    description: Implement CreateBranchGate to create git branch from correct base commit with stacking logic
+    acceptance_criteria:
+      - CreateBranchGate calculates base commit deterministically
+      - First ticket (no dependencies) branches from epic baseline
+      - Ticket with single dependency branches from dependency's final commit (true stacking)
+      - Ticket with multiple dependencies finds most recent commit via git
+      - Creates branch with format "ticket/{ticket-id}"
+      - Pushes branch to remote
+      - Returns GateResult with metadata containing branch_name and base_commit
+      - Handles git errors gracefully
+      - Validates dependency is COMPLETED before using its final commit
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/gates.py
+    dependencies:
+      - create-gate-interface-and-protocol
+      - implement-git-operations-wrapper
+
+  - name: implement-llm-start-gate
+    description: Implement LLMStartGate to enforce synchronous execution and verify branch exists
+    acceptance_criteria:
+      - LLMStartGate enforces concurrency = 1 (only one ticket in IN_PROGRESS or AWAITING_VALIDATION)
+      - Returns GateResult with passed=False if another ticket is active
+      - Verifies branch exists on remote before allowing start
+      - Returns GateResult with passed=True if concurrency limit not exceeded and branch exists
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/gates.py
+    dependencies:
+      - create-gate-interface-and-protocol
+      - implement-git-operations-wrapper
+
+  - name: implement-validation-gate
+    description: Implement ValidationGate to validate LLM work before marking COMPLETED
+    acceptance_criteria:
+      - ValidationGate checks branch has commits beyond base
+      - Checks final commit exists and is on branch
+      - Checks test suite status (passing or skipped for non-critical)
+      - Checks all acceptance criteria are met
+      - Returns GateResult with passed=True if all checks pass
+      - Returns GateResult with passed=False and reason if any check fails
+      - Critical tickets must have passing tests
+      - Non-critical tickets can skip tests
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/gates.py
+    dependencies:
+      - create-gate-interface-and-protocol
+      - implement-git-operations-wrapper
+
+  - name: implement-state-machine-core
+    description: Implement EpicStateMachine core with state transitions and ticket lifecycle management
+    acceptance_criteria:
+      - EpicStateMachine class with __init__ accepting epic_file and resume flag
+      - Loads state from epic-state.json if resume=True
+      - Initializes new epic if resume=False
+      - Private _transition_ticket method with validation
+      - Private _run_gate method to execute gates and log results
+      - Private _is_valid_transition to validate state transitions
+      - Private _update_epic_state to update epic-level state based on ticket states
+      - Transition logging with timestamps
+      - State persistence on every transition
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - create-state-enums-and-models
+      - implement-state-file-persistence
+
+  - name: implement-get-ready-tickets-api
+    description: Implement get_ready_tickets() public API method in state machine
+    acceptance_criteria:
+      - get_ready_tickets() returns list of tickets in READY state
+      - Automatically transitions PENDING tickets to READY if dependencies met
+      - Uses DependenciesMetGate to check dependencies
+      - Returns tickets sorted by priority (critical first, then by dependency depth)
+      - Returns empty list if no tickets ready
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-state-machine-core
+      - implement-dependencies-met-gate
+
+  - name: implement-start-ticket-api
+    description: Implement start_ticket() public API method in state machine
+    acceptance_criteria:
+      - start_ticket(ticket_id) transitions ticket READY → BRANCH_CREATED → IN_PROGRESS
+      - Runs CreateBranchGate to create branch from base commit
+      - Runs LLMStartGate to enforce concurrency
+      - Updates ticket.git_info with branch_name and base_commit
+      - Returns dict with branch_name, base_commit, ticket_file, epic_file
+      - Raises StateTransitionError if gates fail
+      - Marks ticket.started_at timestamp
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-state-machine-core
+      - implement-create-branch-gate
+      - implement-llm-start-gate
+
+  - name: implement-complete-ticket-api
+    description: Implement complete_ticket() public API method in state machine
+    acceptance_criteria:
+      - complete_ticket(ticket_id, final_commit, test_suite_status, acceptance_criteria) validates and transitions ticket
+      - Transitions IN_PROGRESS → AWAITING_VALIDATION → COMPLETED (if validation passes)
+      - Transitions to FAILED if validation fails
+      - Runs ValidationGate to verify work
+      - Updates ticket with final_commit, test_suite_status, acceptance_criteria
+      - Marks ticket.completed_at timestamp
+      - Returns True if validation passed, False if failed
+      - Calls _handle_ticket_failure if validation fails
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-state-machine-core
+      - implement-validation-gate
+
+  - name: implement-fail-ticket-api
+    description: Implement fail_ticket() public API method and _handle_ticket_failure helper
+    acceptance_criteria:
+      - fail_ticket(ticket_id, reason) marks ticket as FAILED
+      - _handle_ticket_failure blocks all dependent tickets
+      - Blocked tickets transition to BLOCKED state with blocking_dependency field
+      - Critical ticket failure sets epic_state to FAILED
+      - Critical ticket failure triggers rollback if rollback_on_failure=True
+      - Non-critical ticket failure does not fail epic
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-state-machine-core
+
+  - name: implement-finalize-epic-api
+    description: Implement finalize_epic() public API method to collapse tickets into epic branch
+    acceptance_criteria:
+      - finalize_epic() verifies all tickets are COMPLETED, BLOCKED, or FAILED
+      - Transitions epic state to MERGING
+      - Gets tickets in topological order (dependencies first)
+      - Squash merges each COMPLETED ticket into epic branch sequentially
+      - Uses merge_branch with strategy="squash"
+      - Generates commit message: "feat: {ticket.title}\n\nTicket: {ticket.id}"
+      - Deletes ticket branches after successful merge
+      - Pushes epic branch to remote
+      - Transitions epic state to FINALIZED
+      - Returns dict with success, epic_branch, merge_commits, pushed
+      - Handles merge conflicts and returns error if merge fails
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-complete-ticket-api
+      - implement-git-operations-wrapper
+
+  - name: implement-get-epic-status-api
+    description: Implement get_epic_status() public API method to return current epic state
+    acceptance_criteria:
+      - get_epic_status() returns dict with epic_state, tickets, stats
+      - Tickets dict includes state, critical, git_info for each ticket
+      - Stats include total, completed, in_progress, failed, blocked counts
+      - JSON serializable output
+    files_to_modify:
+      - /Users/kit/Code/buildspec/epic/state_machine.py
+    dependencies:
+      - implement-state-machine-core
+
+  - name: create-epic-cli-commands
+    description: Create CLI commands for state machine API (status, start-ticket, complete-ticket, fail-ticket, finalize)
+    acceptance_criteria:
+      - Click command group 'buildspec epic' with subcommands
+      - epic status <epic_file> shows epic status JSON
+      - epic status <epic_file> --ready shows ready tickets JSON
+      - epic start-ticket <epic_file> <ticket_id> creates branch and returns info JSON
+      - epic complete-ticket <epic_file> <ticket_id> --final-commit --test-status --acceptance-criteria validates and returns result JSON
+      - epic fail-ticket <epic_file> <ticket_id> --reason marks ticket failed
+      - epic finalize <epic_file> collapses tickets and pushes epic branch
+      - All commands output JSON for LLM consumption
+      - Error handling with clear messages and non-zero exit codes
+      - Commands are in buildspec/cli/epic_commands.py
+    files_to_modify:
+      - /Users/kit/Code/buildspec/cli/epic_commands.py
+    dependencies:
+      - implement-get-epic-status-api
+      - implement-get-ready-tickets-api
+      - implement-start-ticket-api
+      - implement-complete-ticket-api
+      - implement-fail-ticket-api
+      - implement-finalize-epic-api
+
+  - name: update-execute-epic-orchestrator-instructions
+    description: Update execute-epic.md with simplified orchestrator instructions using state machine API
+    acceptance_criteria:
+      - execute-epic.md describes LLM orchestrator responsibilities
+      - Documents all state machine API commands with examples
+      - Shows synchronous execution loop (Phase 1 and Phase 2)
+      - Explains what LLM does NOT do (create branches, merge, update state file)
+      - Provides clear error handling patterns
+      - Documents sub-agent spawning with Task tool
+      - Shows how to report completion back to state machine
+    files_to_modify:
+      - /Users/kit/Code/buildspec/.claude/prompts/execute-epic.md
+    dependencies:
+      - create-epic-cli-commands
+
+  - name: update-execute-ticket-completion-reporting
+    description: Update execute-ticket.md to report completion to state machine API
+    acceptance_criteria:
+      - execute-ticket.md instructs sub-agent to report final commit SHA
+      - Documents how to report test suite status
+      - Documents how to report acceptance criteria completion
+      - Shows how to call complete-ticket API
+      - Shows how to call fail-ticket API on errors
+      - Maintains existing ticket implementation instructions
+    files_to_modify:
+      - /Users/kit/Code/buildspec/.claude/prompts/execute-ticket.md
+    dependencies:
+      - create-epic-cli-commands
+
+  - name: add-state-machine-unit-tests
+    description: Add comprehensive unit tests for state machine, gates, and git operations
+    acceptance_criteria:
+      - Test all state transitions (valid and invalid)
+      - Test all gates with passing and failing scenarios
+      - Test git operations wrapper with mocked git commands
+      - Test state file persistence (save and load)
+      - Test dependency checking logic
+      - Test base commit calculation for stacked branches
+      - Test concurrency enforcement
+      - Test validation gate checks
+      - Test ticket failure and blocking logic
+      - All tests use pytest with fixtures
+      - Tests are in tests/epic/test_state_machine.py, test_gates.py, test_git_operations.py
+    files_to_modify:
+      - /Users/kit/Code/buildspec/tests/epic/test_state_machine.py
+      - /Users/kit/Code/buildspec/tests/epic/test_gates.py
+      - /Users/kit/Code/buildspec/tests/epic/test_git_operations.py
+    dependencies:
+      - implement-finalize-epic-api
+      - create-epic-cli-commands
+
+  - name: add-integration-test-happy-path
+    description: Add integration test for happy path (3 tickets, all succeed, finalize)
+    acceptance_criteria:
+      - Test creates test epic with 3 sequential tickets
+      - Test initializes state machine
+      - Test executes all tickets synchronously
+      - Test validates stacked branches are created correctly
+      - Test validates tickets transition through all states
+      - Test validates finalize merges all tickets into epic branch
+      - Test validates epic branch is pushed to remote
+      - Test validates ticket branches are deleted
+      - Test uses real git repository (not mocked)
+    files_to_modify:
+      - /Users/kit/Code/buildspec/tests/epic/test_integration.py
+    dependencies:
+      - add-state-machine-unit-tests
+
+  - name: add-integration-test-critical-failure
+    description: Add integration test for critical ticket failure with rollback
+    acceptance_criteria:
+      - Test creates epic with critical ticket that fails
+      - Test verifies epic state transitions to FAILED
+      - Test verifies dependent tickets are BLOCKED
+      - Test verifies rollback is triggered if configured
+      - Test verifies state is preserved correctly
+    files_to_modify:
+      - /Users/kit/Code/buildspec/tests/epic/test_integration.py
+    dependencies:
+      - add-integration-test-happy-path
+
+  - name: add-integration-test-crash-recovery
+    description: Add integration test for resuming epic execution after crash
+    acceptance_criteria:
+      - Test starts epic execution, completes one ticket
+      - Test simulates crash by stopping state machine
+      - Test creates new state machine instance with resume=True
+      - Test verifies state is loaded from epic-state.json
+      - Test continues execution from where it left off
+      - Test validates all tickets complete successfully
+      - Test validates final epic state is FINALIZED
+    files_to_modify:
+      - /Users/kit/Code/buildspec/tests/epic/test_integration.py
+    dependencies:
+      - add-integration-test-happy-path
+
+  - name: add-integration-test-complex-dependencies
+    description: Add integration test for diamond dependency graph
+    acceptance_criteria:
+      - Test creates epic with diamond dependencies (A, B depends on A, C depends on A, D depends on B+C)
+      - Test verifies base commit calculation for ticket with multiple dependencies
+      - Test verifies execution order respects dependencies
+      - Test validates all tickets complete and merge correctly
+    files_to_modify:
+      - /Users/kit/Code/buildspec/tests/epic/test_integration.py
+    dependencies:
+      - add-integration-test-happy-path
