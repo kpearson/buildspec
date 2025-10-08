@@ -1,9 +1,10 @@
 """Create epic command implementation."""
 
 import json
+import logging
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import typer
 from rich.console import Console
@@ -15,6 +16,7 @@ from cli.utils.epic_validator import parse_epic_yaml, validate_ticket_count
 from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def parse_specialist_output(output: str) -> List[Dict]:
@@ -52,66 +54,76 @@ def create_split_subdirectories(base_dir: str, epic_names: List[str]) -> List[st
     """
     Create subdirectory structure for each split epic.
 
+    Creates the directory structure:
+    [base-dir]/[epic-name]/
+    [base-dir]/[epic-name]/tickets/
+
     Args:
-        base_dir: Base directory path (should be within .epics/)
-        epic_names: List of epic names to create subdirectories for
+        base_dir: Base directory path (e.g., .epics/user-auth/)
+        epic_names: List of epic names for subdirectories
 
     Returns:
         List of created directory paths
 
     Raises:
-        ValueError: If base_dir is not within .epics/ directory (security check)
+        ValueError: If paths are outside .epics/ directory
         OSError: If directory creation fails
     """
     base_path = Path(base_dir).resolve()
+    epics_root = Path(".epics").resolve()
 
-    # Security check: ensure we're within .epics/
-    if '.epics' not in base_path.parts:
-        raise ValueError(f"Security: base_dir must be within .epics/ directory: {base_dir}")
+    # Security: Validate paths are within .epics/
+    if not str(base_path).startswith(str(epics_root)):
+        raise ValueError(f"Path {base_path} is outside .epics/ directory")
 
     created_dirs = []
 
     for epic_name in epic_names:
-        # Create [base-dir]/[epic-name]/ directory
+        # Create epic subdirectory
         epic_dir = base_path / epic_name
         epic_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create [base-dir]/[epic-name]/tickets/ subdirectory
+        # Create tickets subdirectory
         tickets_dir = epic_dir / "tickets"
         tickets_dir.mkdir(exist_ok=True)
 
         created_dirs.append(str(epic_dir))
+        console.print(f"[green]Created directory: {epic_dir}[/green]")
 
     return created_dirs
 
 
 def archive_original_epic(epic_path: str) -> str:
     """
-    Archive original oversized epic by renaming with .original suffix.
+    Archive the original oversized epic by renaming with .original suffix.
 
     Args:
-        epic_path: Path to original epic YAML file
+        epic_path: Absolute path to epic YAML file
 
     Returns:
-        Path to archived file
+        Path to archived file (.original)
 
     Raises:
-        ValueError: If epic_path is not within .epics/ directory (security check)
-        FileNotFoundError: If epic file doesn't exist
-        OSError: If file rename fails
+        ValueError: If path is outside .epics/ directory
+        OSError: If file operation fails
     """
     epic_file = Path(epic_path).resolve()
+    epics_root = Path(".epics").resolve()
 
-    # Security check: ensure we're within .epics/
-    if '.epics' not in epic_file.parts:
-        raise ValueError(f"Security: epic_path must be within .epics/ directory: {epic_path}")
+    # Security: Validate path is within .epics/
+    if not str(epic_file).startswith(str(epics_root)):
+        raise ValueError(f"Path {epic_file} is outside .epics/ directory")
 
-    if not epic_file.exists():
-        raise FileNotFoundError(f"Epic file does not exist: {epic_path}")
+    # Create archived filename
+    archived_path = epic_file.with_suffix(epic_file.suffix + ".original")
 
-    # Rename [epic].epic.yaml to [epic].epic.yaml.original
-    archived_path = epic_file.parent / f"{epic_file.name}.original"
+    # Warn if .original already exists
+    if archived_path.exists():
+        console.print(f"[yellow]Warning: {archived_path} already exists, overwriting[/yellow]")
+
+    # Rename file
     epic_file.rename(archived_path)
+    console.print(f"[green]Archived original epic: {archived_path}[/green]")
 
     return str(archived_path)
 
