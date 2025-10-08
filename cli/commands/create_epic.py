@@ -141,7 +141,7 @@ def display_split_results(split_epics: List[Dict], archived_path: str) -> None:
 
 def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, context: ProjectContext) -> None:
     """
-    Orchestrate complete epic split process.
+    Orchestrate complete epic split process with edge case handling.
 
     Args:
         epic_path: Path to original oversized epic
@@ -155,11 +155,36 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
     console.print(f"\n[yellow]Epic has {ticket_count} tickets (>= 13). Initiating split workflow...[/yellow]")
 
     try:
-        # 1. Build specialist prompt
+        # 1. Parse epic to analyze dependencies
+        epic_data = parse_epic_yaml(epic_path)
+        tickets = epic_data.get('tickets', [])
+
+        # 2. Detect edge cases
+        logger.info(f"Analyzing {len(tickets)} tickets for edge cases...")
+
+        # Detect circular dependencies
+        circular_groups = detect_circular_dependencies(tickets)
+        if circular_groups:
+            console.print(f"[yellow]Warning: Found {len(circular_groups)} circular dependency groups. These will stay together.[/yellow]")
+            for i, group in enumerate(circular_groups, 1):
+                logger.info(f"Circular group {i}: {group}")
+
+        # Detect long chains
+        long_chains = detect_long_chains(tickets)
+        if long_chains:
+            max_chain_length = max(len(chain) for chain in long_chains)
+            if max_chain_length > 12:
+                console.print(f"[red]Error: Epic has dependency chain of {max_chain_length} tickets (>12 limit).[/red]")
+                console.print("[red]Cannot split while preserving dependencies.[/red]")
+                console.print("[yellow]Recommendation: Review epic design to reduce coupling between tickets.[/yellow]")
+                logger.error(f"Long dependency chain detected: {long_chains[0]}")
+                return
+
+        # 3. Build specialist prompt with edge case context
         prompt_builder = PromptBuilder(context)
         specialist_prompt = prompt_builder.build_split_epic(epic_path, spec_path, ticket_count)
 
-        # 2. Invoke Claude subprocess
+        # 4. Invoke Claude subprocess
         console.print("[blue]Invoking specialist agent to analyze and split epic...[/blue]")
         result = subprocess.run(
             ["claude", "--prompt", specialist_prompt],
@@ -171,28 +196,38 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
         if result.returncode != 0:
             raise RuntimeError(f"Specialist agent failed: {result.stderr}")
 
-        # 3. Parse specialist output to get epic names
+        # 5. Parse specialist output to get epic names
         split_epics = parse_specialist_output(result.stdout)
 
         if not split_epics:
             raise RuntimeError("Specialist agent did not return any split epics")
 
-        # 4. Create subdirectories
+        # 6. Validate split independence
+        console.print("[blue]Validating split epic independence...[/blue]")
+        is_valid, error_msg = validate_split_independence(split_epics, epic_data)
+        if not is_valid:
+            console.print(f"[red]Error: Split validation failed: {error_msg}[/red]")
+            console.print("[yellow]Epic is too tightly coupled to split. Keeping as single epic.[/yellow]")
+            logger.error(f"Split independence validation failed: {error_msg}")
+            return
+
+        # 7. Create subdirectories
         base_dir = Path(epic_path).parent
         epic_names = [e['name'] for e in split_epics]
         created_dirs = create_split_subdirectories(str(base_dir), epic_names)
 
         console.print(f"[dim]Created {len(created_dirs)} subdirectories for split epics[/dim]")
 
-        # 5. Archive original
+        # 8. Archive original
         archived_path = archive_original_epic(epic_path)
         console.print(f"[dim]Archived original epic to: {archived_path}[/dim]")
 
-        # 6. Display results
+        # 9. Display results
         display_split_results(split_epics, archived_path)
 
     except Exception as e:
         console.print(f"[red]ERROR during split workflow:[/red] {e}")
+        logger.exception("Split workflow failed")
         # Re-raise to let caller handle
         raise
 
@@ -207,6 +242,9 @@ def command(
     ),
     project_dir: Optional[Path] = typer.Option(
         None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
+    ),
+    no_split: bool = typer.Option(
+        False, "--no-split", help="Skip automatic epic splitting even if ticket count >= 13"
     ),
 ):
     """Create epic file from planning document."""
@@ -274,13 +312,20 @@ def command(
                     ticket_count = epic_data['ticket_count']
 
                     if validate_ticket_count(ticket_count):
-                        # Trigger split workflow
-                        handle_split_workflow(
-                            epic_path=str(epic_path),
-                            spec_path=str(planning_doc_path),
-                            ticket_count=ticket_count,
-                            context=context
-                        )
+                        # Check if --no-split flag is set
+                        if no_split:
+                            console.print(f"\n[yellow]Warning: --no-split flag set. Epic has {ticket_count} tickets which may be difficult to execute.[/yellow]")
+                            console.print(f"[yellow]Recommendation: Epics with >= 13 tickets may take longer than 2 hours to execute.[/yellow]")
+                            console.print("\n[green]✓ Epic created successfully[/green]")
+                            console.print(f"[dim]Session ID: {session_id}[/dim]")
+                        else:
+                            # Trigger split workflow
+                            handle_split_workflow(
+                                epic_path=str(epic_path),
+                                spec_path=str(planning_doc_path),
+                                ticket_count=ticket_count,
+                                context=context
+                            )
                     else:
                         # Normal success path
                         console.print("\n[green]✓ Epic created successfully[/green]")
