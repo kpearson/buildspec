@@ -111,9 +111,31 @@ COORDINATION-FOCUSED ANALYSIS:
    - FILTER OUT: Implementation speculation, "how we might" discussions
 
 4. Generate epic YAML structure focused on coordination requirements:
+
+   **CRITICAL: Epic YAML Structure**
+
+   The epic YAML file MUST include a `ticket_count` field at the top level:
+
+   ```yaml
+   epic: "Epic Name"
+   description: "Epic description"
+   ticket_count: 10  # REQUIRED: Number of tickets in this epic
+   acceptance_criteria:
+     - "Criterion 1"
+     - "Criterion 2"
+   tickets:
+     - id: ticket-1
+       description: "..."
+     # ... more tickets
+   ```
+
+   The `ticket_count` field is required for automatic validation and split detection. It must be set to the exact number of tickets in the `tickets:` array.
+
+   Full epic YAML structure:
    ```yaml
    epic: "[Epic Title from document]"
    description: "[Epic Summary - core objective only]"
+   ticket_count: [exact count of tickets in tickets array]
 
    acceptance_criteria:
      - "[Concrete success criteria only]"
@@ -292,6 +314,7 @@ The command generates:
 ```yaml
 epic: "User Authentication System"
 description: "Secure user authentication with multi-factor support"
+ticket_count: 4
 
 acceptance_criteria:
   - "Users authenticate via existing auth endpoints"
