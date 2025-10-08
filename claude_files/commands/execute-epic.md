@@ -377,52 +377,244 @@ The completion report must follow this exact structure:
 
 ### Validation Checks
 
-The orchestrator performs the following validation checks on the completion report:
+The orchestrator validates completion reports using the validate_completion_report() function and its supporting validation functions.
 
-**Git Verification:**
+#### validate_completion_report() Function
 
-```bash
-# 1. Verify branch exists
-git rev-parse --verify refs/heads/$branch_name
+**Purpose:** Verify sub-agent completion report before marking ticket complete.
 
-# 2. Verify final commit exists (if status=completed)
-git rev-parse --verify $final_commit
+**Input:**
 
-# 3. Verify commit is on branch
-git branch --contains $final_commit | grep $branch_name
-```
+- `ticket`: Ticket object with metadata
+- `report`: TicketCompletionReport dict from sub-agent
 
-**Test Suite Validation:**
+**Output:**
 
-- If test_suite_status='failing', validation fails (ticket.status='failed')
-- If test_suite_status='skipped', accept (ticket may skip tests intentionally)
-- If test_suite_status='passing', validation passes
+- `ValidationResult` object with `passed` (boolean) and `error` (string | null)
 
-**Acceptance Criteria Validation:**
-
-- Check acceptance_criteria is list of objects with 'criterion' and 'met' fields
-- Verify all criteria have boolean 'met' status
-- Log any criteria with met=false for reporting
-
-**State Update After Validation:**
+**Algorithm:**
 
 ```python
-# Validation passed
-if validation_result.passed:
-    ticket.status = 'completed'
-    ticket.completed_at = datetime.now(UTC).isoformat()
-    ticket.git_info = {
-        'branch_name': report['branch_name'],
-        'base_commit': report['base_commit'],
-        'final_commit': report['final_commit']
-    }
-    update_epic_state(state, {ticket.id: ticket})
+def validate_completion_report(ticket: Ticket, report: dict) -> ValidationResult:
+    """
+    Validate sub-agent completion report.
 
-# Validation failed
-else:
-    ticket.status = 'failed'
-    ticket.failure_reason = f'validation_failed: {validation_result.error}'
-    update_epic_state(state, {ticket.id: ticket})
+    Returns ValidationResult with passed=True/False and error message.
+    """
+    # 1. Validate required fields present
+    required_fields = [
+        'ticket_id', 'status', 'branch_name', 'base_commit',
+        'final_commit', 'files_modified', 'test_suite_status',
+        'acceptance_criteria'
+    ]
+
+    for field in required_fields:
+        if field not in report:
+            return ValidationResult(
+                passed=False,
+                error=f"Missing required field: {field}"
+            )
+
+    # 2. Validate ticket_id matches
+    if report['ticket_id'] != ticket.id:
+        return ValidationResult(
+            passed=False,
+            error=f"Ticket ID mismatch: expected {ticket.id}, got {report['ticket_id']}"
+        )
+
+    # 3. Git verification (only if status=completed)
+    if report['status'] == 'completed':
+        git_result = verify_git_artifacts(report)
+        if not git_result.passed:
+            return git_result
+
+    # 4. Test suite validation
+    test_result = validate_test_suite_status(report)
+    if not test_result.passed:
+        return test_result
+
+    # 5. Acceptance criteria format validation
+    ac_result = validate_acceptance_criteria_format(report)
+    if not ac_result.passed:
+        return ac_result
+
+    # All validations passed
+    return ValidationResult(passed=True, error=None)
+```
+
+#### Git Verification
+
+**Purpose:** Verify branch and commit actually exist in repository.
+
+**Implementation:**
+
+```python
+def verify_git_artifacts(report: dict) -> ValidationResult:
+    """
+    Verify git branch and commit exist.
+
+    Runs git commands to verify:
+    1. Branch exists
+    2. Final commit exists
+    3. Commit is on the branch
+    """
+    branch_name = report['branch_name']
+    final_commit = report['final_commit']
+
+    # Check branch exists
+    result = subprocess.run(
+        ['git', 'rev-parse', '--verify', f'refs/heads/{branch_name}'],
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        return ValidationResult(
+            passed=False,
+            error=f"Branch not found: {branch_name}"
+        )
+
+    # Check final commit exists (if not null)
+    if final_commit:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--verify', final_commit],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return ValidationResult(
+                passed=False,
+                error=f"Commit not found: {final_commit}"
+            )
+
+        # Check commit is on the branch
+        result = subprocess.run(
+            ['git', 'branch', '--contains', final_commit],
+            capture_output=True,
+            text=True
+        )
+        if branch_name not in result.stdout:
+            return ValidationResult(
+                passed=False,
+                error=f"Commit {final_commit} not found on branch {branch_name}"
+            )
+
+    return ValidationResult(passed=True, error=None)
+```
+
+#### Test Suite Validation
+
+**Purpose:** Verify test suite status is valid and acceptable.
+
+**Implementation:**
+
+```python
+def validate_test_suite_status(report: dict) -> ValidationResult:
+    """
+    Validate test suite status.
+
+    Rules:
+    - Status must be one of: 'passing', 'failing', 'skipped'
+    - 'failing' status causes validation failure
+    - 'skipped' status is acceptable
+    - 'passing' status is acceptable
+    """
+    test_status = report['test_suite_status']
+
+    valid_statuses = ['passing', 'failing', 'skipped']
+    if test_status not in valid_statuses:
+        return ValidationResult(
+            passed=False,
+            error=f"Invalid test_suite_status: {test_status}. Must be one of {valid_statuses}"
+        )
+
+    if test_status == 'failing':
+        return ValidationResult(
+            passed=False,
+            error="Test suite is failing. Ticket cannot be marked complete with failing tests."
+        )
+
+    return ValidationResult(passed=True, error=None)
+```
+
+#### Acceptance Criteria Validation
+
+**Purpose:** Verify acceptance criteria format is correct.
+
+**Implementation:**
+
+```python
+def validate_acceptance_criteria_format(report: dict) -> ValidationResult:
+    """
+    Validate acceptance criteria format.
+
+    Format: list of objects with 'criterion' (string) and 'met' (boolean)
+    """
+    criteria = report['acceptance_criteria']
+
+    if not isinstance(criteria, list):
+        return ValidationResult(
+            passed=False,
+            error="acceptance_criteria must be a list"
+        )
+
+    for i, criterion in enumerate(criteria):
+        if not isinstance(criterion, dict):
+            return ValidationResult(
+                passed=False,
+                error=f"acceptance_criteria[{i}] must be an object"
+            )
+
+        if 'criterion' not in criterion:
+            return ValidationResult(
+                passed=False,
+                error=f"acceptance_criteria[{i}] missing 'criterion' field"
+            )
+
+        if 'met' not in criterion:
+            return ValidationResult(
+                passed=False,
+                error=f"acceptance_criteria[{i}] missing 'met' field"
+            )
+
+        if not isinstance(criterion['met'], bool):
+            return ValidationResult(
+                passed=False,
+                error=f"acceptance_criteria[{i}]['met'] must be boolean"
+            )
+
+    # Log unmet criteria for reporting
+    unmet = [c['criterion'] for c in criteria if not c['met']]
+    if unmet:
+        logger.warning(f"Ticket {report['ticket_id']} has unmet criteria: {unmet}")
+
+    return ValidationResult(passed=True, error=None)
+```
+
+#### State Update After Validation
+
+**Validation Passed:**
+
+```python
+ticket.status = 'completed'
+ticket.completed_at = datetime.now(UTC).isoformat()
+ticket.git_info = {
+    'branch_name': report['branch_name'],
+    'base_commit': report['base_commit'],
+    'final_commit': report['final_commit']
+}
+update_epic_state(state, {ticket.id: ticket})
+logger.info(f"Ticket {ticket.id} validated and marked complete")
+```
+
+**Validation Failed:**
+
+```python
+ticket.status = 'failed'
+ticket.failure_reason = f'validation_failed: {validation_result.error}'
+ticket.completed_at = datetime.now(UTC).isoformat()
+# Do NOT update git_info
+update_epic_state(state, {ticket.id: ticket})
+logger.error(f"Ticket {ticket.id} validation failed: {validation_result.error}")
 ```
 
 ## Error Recovery Workflows
