@@ -1,6 +1,5 @@
 """Execute epic command implementation."""
 
-import re
 import subprocess
 import threading
 import time

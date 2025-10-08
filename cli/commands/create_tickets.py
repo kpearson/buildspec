@@ -33,7 +33,7 @@ def command(
         except PathResolutionError as e:
             console.print(f"[red]ERROR:[/red] {e}")
             raise typer.Exit(code=1) from e
-        
+
         # Initialize context
         context = ProjectContext(cwd=project_dir)
 

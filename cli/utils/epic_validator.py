@@ -29,7 +29,7 @@ def parse_epic_yaml(epic_file_path: str) -> Dict:
         raise FileNotFoundError(f"Epic file does not exist: {epic_file_path}")
 
     try:
-        with open(epic_file_path, 'r') as f:
+        with open(epic_file_path) as f:
             epic_data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise yaml.YAMLError(f"Failed to parse YAML file {epic_file_path}: {e}")

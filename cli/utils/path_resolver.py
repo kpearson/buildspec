@@ -35,20 +35,20 @@ def resolve_file_argument(
     # Strip line number notation
     if ":" in arg:
         arg = arg.split(":", 1)[0]
-    
+
     path = Path(arg)
-    
+
     # If it's a file that exists, return it
     if path.is_file():
         return path
-    
+
     # If it's a directory and we have a pattern, try to infer the file
     if path.is_dir() and expected_pattern:
         matching_files = [
             f for f in path.iterdir()
             if f.is_file() and expected_pattern.lower() in f.name.lower()
         ]
-        
+
         if len(matching_files) == 0:
             raise PathResolutionError(
                 f"{arg_name.capitalize()} not found: No files containing '{expected_pattern}' in directory: {path}"
@@ -59,16 +59,16 @@ def resolve_file_argument(
                 f"{arg_name.capitalize()} ambiguous: Multiple files containing '{expected_pattern}' found in {path}:\n  {files_list}\n"
                 f"Please specify the exact file."
             )
-        
+
         return matching_files[0]
-    
+
     # If it's a directory but no pattern provided
     if path.is_dir():
         raise PathResolutionError(
             f"{arg_name.capitalize()} is a directory: {path}\n"
             f"Please specify the exact file."
         )
-    
+
     # Path doesn't exist
     raise PathResolutionError(
         f"{arg_name.capitalize()} not found: {path}"

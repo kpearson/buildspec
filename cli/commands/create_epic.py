@@ -501,7 +501,7 @@ def command(
                         # Check if --no-split flag is set
                         if no_split:
                             console.print(f"\n[yellow]Warning: --no-split flag set. Epic has {ticket_count} tickets which may be difficult to execute.[/yellow]")
-                            console.print(f"[yellow]Recommendation: Epics with >= 13 tickets may take longer than 2 hours to execute.[/yellow]")
+                            console.print("[yellow]Recommendation: Epics with >= 13 tickets may take longer than 2 hours to execute.[/yellow]")
                             console.print("\n[green]✓ Epic created successfully[/green]")
                             console.print(f"[dim]Session ID: {session_id}[/dim]")
                         else:

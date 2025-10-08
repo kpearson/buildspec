@@ -1,6 +1,5 @@
 """Tests for commit message parser utility."""
 
-import pytest
 
 from cli.utils.commit_parser import extract_ticket_name, parse_ticket_name_from_commit
 

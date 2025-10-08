@@ -164,7 +164,7 @@ tool.
         )
 
         ticket_command_file = self.context.claude_dir / "commands" / "execute-ticket.md"
-        
+
         prompt = f"""Read {command_file} and execute the Task Agent Instructions.
 
 Epic file: {epic_file}
