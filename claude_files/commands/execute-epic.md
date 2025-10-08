@@ -364,6 +364,246 @@ critical = false  # Epic continues even if this fails
 
 ```
 
+## Sub-Agent Lifecycle Protocol
+
+The orchestrator spawns ticket-builder sub-agents via the Task tool and coordinates their execution through a standardized lifecycle protocol. This section defines the complete contract between orchestrator and sub-agents for spawn, monitor, and validate phases.
+
+### Phase 1: Spawn
+
+**Tool:** Task tool with subagent_type='general-purpose'
+
+**Prompt Construction:**
+
+The orchestrator constructs the sub-agent prompt by reading execute-ticket.md and injecting ticket-specific context:
+
+```python
+# Read execute-ticket.md template
+ticket_instructions = Path("/Users/kit/Code/buildspec/claude_files/commands/execute-ticket.md").read_text()
+
+# Inject context
+prompt = f"""
+{ticket_instructions}
+
+TICKET EXECUTION CONTEXT:
+- Ticket Path: {ticket.path}
+- Epic Path: {epic_path}
+- Base Commit: {base_commit_sha}
+- Session ID: {session_id}
+- Ticket ID: {ticket.id}
+
+Execute the ticket and return a TicketCompletionReport in JSON format.
+"""
+
+# Spawn sub-agent via Task tool
+handle = Task.spawn(
+    subagent_type='general-purpose',
+    prompt=prompt,
+    context={'ticket_id': ticket.id, 'epic_id': epic.id}
+)
+```
+
+**State Updates Before Spawn:**
+
+Before spawning a sub-agent, the orchestrator updates the ticket state:
+
+```python
+ticket.status = 'executing'
+ticket.started_at = datetime.now(UTC).isoformat()
+update_epic_state(state, {ticket.id: ticket})
+```
+
+**State Updates After Spawn:**
+
+After successfully spawning, the orchestrator records the sub-agent handle:
+
+```python
+# Track sub-agent handle for monitoring
+sub_agent_handles[ticket.id] = handle
+```
+
+**Error Handling:**
+
+If spawn fails, the ticket is marked as failed:
+
+```python
+try:
+    handle = Task.spawn(...)
+except SpawnError as e:
+    ticket.status = 'failed'
+    ticket.failure_reason = f'spawn_error: {str(e)}'
+    update_epic_state(state, {ticket.id: ticket})
+    logger.error(f"Failed to spawn sub-agent for {ticket.id}: {e}")
+```
+
+### Phase 2: Monitor
+
+**Strategy:** Passive monitoring (no polling)
+
+The orchestrator uses a passive monitoring approach that waits for Task tool completion rather than actively polling for progress.
+
+**The orchestrator does NOT:**
+
+- Poll git for new commits during execution
+- Read ticket files while sub-agent is working
+- Check process status continuously
+- Make any active checks during execution
+
+**The orchestrator DOES:**
+
+- Wait for Task tool to return (blocking or async)
+- Track multiple sub-agent futures simultaneously
+- Respond only when sub-agent completes and returns
+- Maintain state consistency through completion reports
+
+**Parallel Tracking:**
+
+The orchestrator tracks multiple sub-agents executing in parallel:
+
+```python
+# Spawn multiple sub-agents
+handles = []
+for ticket in ready_tickets[:available_slots]:
+    handle = spawn_ticket_sub_agent(ticket, base_commit, session_id)
+    handles.append((ticket.id, handle))
+
+# Wait for any completion
+completed_ticket_id, completion_report = wait_for_any(handles)
+```
+
+This allows the orchestrator to maximize parallelism while respecting concurrency limits (MAX_CONCURRENT_TICKETS).
+
+### Phase 3: Validate Completion Report
+
+When a sub-agent returns, the orchestrator validates the completion report before accepting the ticket as complete.
+
+**TicketCompletionReport Schema:**
+
+The completion report must follow this exact structure:
+
+**Required Fields:**
+
+- `ticket_id` (string): Ticket identifier matching ticket file
+- `status` (enum): 'completed' | 'failed' | 'blocked'
+- `branch_name` (string): Git branch created (e.g., 'ticket/add-user-auth')
+- `base_commit` (string): SHA ticket was branched from
+- `final_commit` (string | null): SHA of final commit (null if failed)
+- `files_modified` (list[string]): File paths changed during execution
+- `test_suite_status` (enum): 'passing' | 'failing' | 'skipped'
+- `acceptance_criteria` (list[object]): [{criterion: string, met: boolean}, ...]
+
+**Optional Fields:**
+
+- `failure_reason` (string | null): Description if status='failed'
+- `blocking_dependency` (string | null): Ticket ID if status='blocked'
+- `warnings` (list[string]): Non-fatal issues encountered
+
+**Example - Success:**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "completed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456",
+  "final_commit": "789ghi012jkl",
+  "files_modified": [
+    "/Users/kit/Code/buildspec/cli/auth.py",
+    "/Users/kit/Code/buildspec/tests/test_auth.py"
+  ],
+  "test_suite_status": "passing",
+  "acceptance_criteria": [
+    { "criterion": "User can authenticate with password", "met": true },
+    { "criterion": "Invalid credentials rejected", "met": true },
+    { "criterion": "Session tokens generated", "met": true }
+  ],
+  "warnings": []
+}
+```
+
+**Example - Failure:**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "failed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456",
+  "final_commit": null,
+  "files_modified": [],
+  "test_suite_status": "failing",
+  "acceptance_criteria": [],
+  "failure_reason": "Test suite failed: test_password_validation failed with assertion error",
+  "warnings": ["Could not import bcrypt library"]
+}
+```
+
+**Example - Blocked:**
+
+```json
+{
+  "ticket_id": "add-user-sessions",
+  "status": "blocked",
+  "branch_name": "ticket/add-user-sessions",
+  "base_commit": "abc123def456",
+  "final_commit": null,
+  "files_modified": [],
+  "test_suite_status": "skipped",
+  "acceptance_criteria": [],
+  "blocking_dependency": "add-user-authentication",
+  "failure_reason": "Cannot implement sessions without authentication base"
+}
+```
+
+### Validation Checks
+
+The orchestrator performs the following validation checks on the completion report:
+
+**Git Verification:**
+
+```bash
+# 1. Verify branch exists
+git rev-parse --verify refs/heads/$branch_name
+
+# 2. Verify final commit exists (if status=completed)
+git rev-parse --verify $final_commit
+
+# 3. Verify commit is on branch
+git branch --contains $final_commit | grep $branch_name
+```
+
+**Test Suite Validation:**
+
+- If test_suite_status='failing', validation fails (ticket.status='failed')
+- If test_suite_status='skipped', accept (ticket may skip tests intentionally)
+- If test_suite_status='passing', validation passes
+
+**Acceptance Criteria Validation:**
+
+- Check acceptance_criteria is list of objects with 'criterion' and 'met' fields
+- Verify all criteria have boolean 'met' status
+- Log any criteria with met=false for reporting
+
+**State Update After Validation:**
+
+```python
+# Validation passed
+if validation_result.passed:
+    ticket.status = 'completed'
+    ticket.completed_at = datetime.now(UTC).isoformat()
+    ticket.git_info = {
+        'branch_name': report['branch_name'],
+        'base_commit': report['base_commit'],
+        'final_commit': report['final_commit']
+    }
+    update_epic_state(state, {ticket.id: ticket})
+
+# Validation failed
+else:
+    ticket.status = 'failed'
+    ticket.failure_reason = f'validation_failed: {validation_result.error}'
+    update_epic_state(state, {ticket.id: ticket})
+```
+
 ## Execution Flow
 
 When you run this command from main Claude:
