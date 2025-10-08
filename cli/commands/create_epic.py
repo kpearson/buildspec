@@ -50,6 +50,180 @@ def parse_specialist_output(output: str) -> List[Dict]:
         raise RuntimeError(f"Failed to parse specialist output as JSON: {e}")
 
 
+def detect_circular_dependencies(tickets: List[Dict]) -> List[Set[str]]:
+    """
+    Detect circular dependency groups that must stay together.
+
+    Uses depth-first search to detect cycles in the dependency graph.
+
+    Args:
+        tickets: List of ticket dicts with 'id' and 'depends_on' fields
+
+    Returns:
+        List of sets containing ticket IDs that have circular dependencies
+    """
+    # Build ticket ID to dependencies mapping
+    ticket_deps = {}
+    for ticket in tickets:
+        ticket_id = ticket.get('id', '')
+        depends_on = ticket.get('depends_on', [])
+        ticket_deps[ticket_id] = set(depends_on) if depends_on else set()
+
+    # Track visited tickets and current path for cycle detection
+    visited = set()
+    rec_stack = set()
+    circular_groups = []
+
+    def dfs(ticket_id: str, path: List[str]) -> Optional[List[str]]:
+        """DFS to detect cycles. Returns cycle if found."""
+        if ticket_id in rec_stack:
+            # Found a cycle - return the cycle portion
+            cycle_start = path.index(ticket_id)
+            return path[cycle_start:]
+
+        if ticket_id in visited:
+            return None
+
+        visited.add(ticket_id)
+        rec_stack.add(ticket_id)
+        path.append(ticket_id)
+
+        # Visit dependencies
+        for dep in ticket_deps.get(ticket_id, set()):
+            cycle = dfs(dep, path[:])
+            if cycle:
+                return cycle
+
+        rec_stack.remove(ticket_id)
+        return None
+
+    # Check each ticket for cycles
+    for ticket_id in ticket_deps.keys():
+        if ticket_id not in visited:
+            cycle = dfs(ticket_id, [])
+            if cycle:
+                circular_groups.append(set(cycle))
+                logger.info(f"Detected circular dependency group: {cycle}")
+
+    return circular_groups
+
+
+def detect_long_chains(tickets: List[Dict]) -> List[List[str]]:
+    """
+    Detect long dependency chains that cannot be split.
+
+    Finds the longest path from any ticket to its deepest dependency.
+
+    Args:
+        tickets: List of ticket dicts with 'id' and 'depends_on' fields
+
+    Returns:
+        List of ticket ID lists representing dependency chains (longest first)
+    """
+    # Build ticket ID to dependencies mapping
+    ticket_deps = {}
+    for ticket in tickets:
+        ticket_id = ticket.get('id', '')
+        depends_on = ticket.get('depends_on', [])
+        ticket_deps[ticket_id] = set(depends_on) if depends_on else set()
+
+    # Find all paths using DFS
+    def find_longest_path(ticket_id: str, visited: Set[str]) -> List[str]:
+        """Find longest path from this ticket."""
+        if ticket_id in visited:
+            # Cycle detected, return empty to avoid infinite loop
+            return []
+
+        visited = visited | {ticket_id}
+        dependencies = ticket_deps.get(ticket_id, set())
+
+        if not dependencies:
+            return [ticket_id]
+
+        # Find longest path through dependencies
+        longest = []
+        for dep in dependencies:
+            path = find_longest_path(dep, visited)
+            if len(path) > len(longest):
+                longest = path
+
+        return [ticket_id] + longest
+
+    # Calculate longest path for each ticket
+    all_paths = []
+    for ticket_id in ticket_deps.keys():
+        path = find_longest_path(ticket_id, set())
+        if path:
+            all_paths.append(path)
+
+    # Sort by length (longest first) and deduplicate
+    all_paths.sort(key=len, reverse=True)
+
+    # Return unique long chains (>= 12 tickets is considered long)
+    seen = set()
+    long_chains = []
+    for path in all_paths:
+        path_key = tuple(path)
+        if path_key not in seen and len(path) >= 12:
+            long_chains.append(path)
+            seen.add(path_key)
+            logger.info(f"Detected long dependency chain ({len(path)} tickets): {path}")
+
+    return long_chains
+
+
+def validate_split_independence(split_epics: List[Dict], epic_data: Dict) -> Tuple[bool, str]:
+    """
+    Validate that split epics are fully independent with no cross-epic dependencies.
+
+    Args:
+        split_epics: List of split epic data with paths
+        epic_data: Original epic data containing all tickets
+
+    Returns:
+        (is_valid, error_message) tuple - error_message is empty string if valid
+    """
+    # Load each split epic and build ticket->epic mapping
+    ticket_to_epic = {}
+    split_epic_tickets = {}
+
+    for split_epic in split_epics:
+        epic_path = split_epic.get('path')
+        if not epic_path or not Path(epic_path).exists():
+            continue
+
+        try:
+            epic_content = parse_epic_yaml(epic_path)
+            epic_name = split_epic.get('name', epic_path)
+            split_epic_tickets[epic_name] = epic_content.get('tickets', [])
+
+            # Map each ticket to its epic
+            for ticket in epic_content.get('tickets', []):
+                ticket_id = ticket.get('id', '')
+                ticket_to_epic[ticket_id] = epic_name
+        except Exception as e:
+            logger.warning(f"Could not parse split epic {epic_path}: {e}")
+            continue
+
+    # Check for cross-epic dependencies
+    for epic_name, tickets in split_epic_tickets.items():
+        for ticket in tickets:
+            ticket_id = ticket.get('id', '')
+            depends_on = ticket.get('depends_on', [])
+
+            for dep in depends_on:
+                dep_epic = ticket_to_epic.get(dep)
+                if dep_epic and dep_epic != epic_name:
+                    error_msg = (
+                        f"Cross-epic dependency found: ticket '{ticket_id}' in epic "
+                        f"'{epic_name}' depends on '{dep}' in epic '{dep_epic}'"
+                    )
+                    logger.error(error_msg)
+                    return False, error_msg
+
+    return True, ""
+
+
 def create_split_subdirectories(base_dir: str, epic_names: List[str]) -> List[str]:
     """
     Create subdirectory structure for each split epic.

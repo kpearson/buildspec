@@ -1,0 +1,362 @@
+epic: "Epic Splitting System"
+description: "Automatically detect oversized epics (>12 tickets) and split them into multiple independent epics while preserving all context and quality from the original epic creation."
+
+acceptance_criteria:
+  - "Oversized epics (>=13 tickets) are automatically detected after creation"
+  - "Split epics maintain all context and quality from original epic"
+  - "Each split epic contains <= 12 tickets (soft limit) or <= 15 tickets (hard limit)"
+  - "Each split epic is fully independent with no cross-epic dependencies"
+  - "Dependencies are preserved within each epic only"
+  - "Original epic is archived for reference"
+  - "Clear feedback provided about split results"
+
+rollback_on_failure: true
+
+coordination_requirements:
+  function_profiles:
+    EpicValidator:
+      parse_epic_yaml:
+        arity: 1
+        intent: "Parse epic YAML file and extract ticket count for validation"
+        signature: "def parse_epic_yaml(epic_file_path: str) -> dict"
+      validate_ticket_count:
+        arity: 1
+        intent: "Check if ticket count exceeds threshold and needs splitting"
+        signature: "def validate_ticket_count(ticket_count: int) -> bool"
+
+    PromptBuilder:
+      build_split_epic:
+        arity: 3
+        intent: "Create specialist prompt for splitting oversized epics into independent deliverables"
+        signature: "def build_split_epic(original_epic_path: str, spec_path: str, ticket_count: int) -> str"
+
+    CreateEpicCommand:
+      handle_split_workflow:
+        arity: 3
+        intent: "Orchestrate epic splitting when ticket count >= 13"
+        signature: "def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int) -> None"
+      archive_original_epic:
+        arity: 1
+        intent: "Move original oversized epic to .original archive file"
+        signature: "def archive_original_epic(epic_path: str) -> str"
+      create_split_subdirectories:
+        arity: 2
+        intent: "Create subdirectory structure for each split epic"
+        signature: "def create_split_subdirectories(base_dir: str, epic_names: list[str]) -> list[str]"
+
+  directory_structure:
+    required_paths:
+      - ".epics/[epic-name]/[epic-name]-spec.md"
+      - ".epics/[epic-name]/[epic-name].epic.yaml.original"
+      - ".epics/[epic-name]/[split-epic-1]/[split-epic-1].epic.yaml"
+      - ".epics/[epic-name]/[split-epic-1]/tickets/"
+      - ".epics/[epic-name]/[split-epic-2]/[split-epic-2].epic.yaml"
+      - ".epics/[epic-name]/[split-epic-2]/tickets/"
+    organization_patterns:
+      split_epics: "Each split epic gets its own subdirectory under the original epic directory"
+      ticket_files: "Ticket files are scoped to their epic's tickets/ subdirectory"
+      archived_epic: "Original oversized epic renamed with .original suffix at top level"
+    shared_locations:
+      spec_document: ".epics/[epic-name]/[epic-name]-spec.md (remains at top level)"
+      validator_module: "cli/utils/epic_validator.py (new module)"
+      split_command: "claude_files/commands/split-epic.md (new specialist instructions)"
+
+  breaking_changes_prohibited:
+    - "Epic YAML structure must remain compatible with existing execute-epic workflow"
+    - "Ticket YAML format must not change"
+    - "Existing single-epic workflows must continue to work unchanged"
+
+  shared_interfaces:
+    EpicYAML:
+      - "ticket_count: N field REQUIRED at top level for validation"
+      - "Epic YAML must be parseable by existing YAML parser"
+    SplitEpicOutput:
+      - "Each split epic YAML follows same format as original"
+      - "Split epics are fully independent - no cross-epic dependency fields"
+
+  performance_contracts:
+    validation_time: "< 100ms for ticket count check (simple YAML field read)"
+    split_execution: "< 2 minutes for specialist agent to analyze and split epic"
+
+  security_constraints:
+    - "File operations must validate paths are within .epics/ directory"
+    - "Archived epics must preserve original content exactly"
+
+  architectural_decisions:
+    technology_choices:
+      - "Python YAML parsing for ticket count validation (cheap, fast)"
+      - "Claude subprocess for specialist splitting agent"
+      - "No epic hierarchies - each split epic is independent"
+    patterns:
+      - "Post-creation validation triggers split workflow"
+      - "Deliverable-focused grouping: each epic represents a cohesive capability"
+      - "Subdirectory per split epic with own tickets/ folder"
+      - "Dependencies must stay within same epic - cannot split across epics"
+    constraints:
+      - "Soft limit: 12 tickets per epic (ideal)"
+      - "Hard limit: 15 tickets per epic (maximum after split)"
+      - "Split trigger: 13 tickets (when to invoke specialist)"
+      - "Full independence: each split epic must be deployable alone"
+
+  integration_contracts:
+    ticket-count-validation:
+      provides:
+        - "EpicValidator.parse_epic_yaml() returns dict with ticket_count"
+        - "EpicValidator.validate_ticket_count() returns boolean for split decision"
+      consumes:
+        - "Epic YAML file with ticket_count field"
+      interfaces:
+        - "Return value: {'ticket_count': int, 'epic': str, 'tickets': list}"
+
+    split-workflow:
+      provides:
+        - "CreateEpicCommand.handle_split_workflow() orchestrates full split process"
+        - "Subdirectory structure with split epics and archived original"
+      consumes:
+        - "EpicValidator validation results"
+        - "Original epic file and spec document"
+      interfaces:
+        - "Creates: [base-dir]/[split-name]/[split-name].epic.yaml for each split"
+        - "Archives: [original].epic.yaml → [original].epic.yaml.original"
+
+    specialist-prompt:
+      provides:
+        - "PromptBuilder.build_split_epic() creates specialist agent instructions"
+        - "Prompt includes deliverable identification criteria"
+      consumes:
+        - "Original epic YAML path"
+        - "Spec document path"
+        - "Ticket count"
+      interfaces:
+        - "Returns: Formatted prompt string for Claude subprocess"
+        - "Includes: Independence requirements, grouping heuristics, file structure"
+
+tickets:
+  - id: epic-validator-module
+    description: |
+      Create cli/utils/epic_validator.py module for post-creation validation.
+
+      This module provides the core validation logic to detect oversized epics that need splitting.
+
+      Implementation requirements:
+      - parse_epic_yaml(epic_file_path: str) -> dict: Parse YAML and extract ticket_count field
+      - validate_ticket_count(ticket_count: int) -> bool: Return True if ticket_count >= 13 (needs split)
+      - Handle YAML parsing errors gracefully
+      - Return structured dict with: {'ticket_count': int, 'epic': str, 'tickets': list}
+
+      File location: cli/utils/epic_validator.py
+
+      Coordination role: Provides ticket count validation interface for create-epic command
+    depends_on: []
+    critical: true
+    coordination_role: "Provides core validation logic and interfaces for epic size detection"
+
+  - id: add-ticket-count-field
+    description: |
+      Update claude_files/commands/create-epic.md to require ticket_count field in epic YAML.
+
+      Add instruction to the create-epic command template that MUST include ticket_count field at the top level of generated epic YAML.
+
+      Implementation requirements:
+      - Add explicit instruction: "MUST include `ticket_count: N` field at top of epic YAML"
+      - Document field purpose: "Required for automatic validation and split detection"
+      - Provide example showing placement in YAML structure
+      - Ensure field is populated with actual ticket array length
+
+      File location: claude_files/commands/create-epic.md
+
+      Coordination role: Establishes ticket_count as shared interface contract for epic YAML format
+    depends_on: []
+    critical: true
+    coordination_role: "Defines epic YAML format contract with ticket_count field requirement"
+
+  - id: split-epic-specialist-command
+    description: |
+      Create claude_files/commands/split-epic.md with specialist agent instructions.
+
+      This command file contains the specialist agent instructions for analyzing and splitting oversized epics into independent deliverables.
+
+      Implementation requirements:
+      - Document deliverable-focused grouping criteria
+      - Specify full independence requirement (no cross-epic dependencies)
+      - Define subdirectory structure for split epics
+      - Include grouping heuristics in priority order
+      - Document ticket count limits (soft: 12, hard: 15)
+      - Provide examples of good vs bad epic names
+      - Specify dependency preservation rules
+
+      File location: claude_files/commands/split-epic.md
+
+      Coordination role: Defines specialist agent behavior and split epic output format
+    depends_on: []
+    critical: true
+    coordination_role: "Provides specialist agent instructions and split epic format specification"
+
+  - id: prompts-build-split-epic
+    description: |
+      Add build_split_epic() method to cli/core/prompts.py for specialist prompt construction.
+
+      This method creates the specialist prompt that combines the split-epic command instructions with context about the specific epic being split.
+
+      Implementation requirements:
+      - build_split_epic(original_epic_path: str, spec_path: str, ticket_count: int) -> str
+      - Load split-epic.md command template
+      - Inject epic file path, spec path, and ticket count into prompt
+      - Include deliverable identification criteria
+      - Include independence requirements and grouping heuristics
+      - Return formatted prompt string ready for Claude subprocess
+
+      File location: cli/core/prompts.py
+
+      Coordination role: Bridges validation results to specialist agent invocation
+    depends_on:
+      - split-epic-specialist-command
+    critical: true
+    coordination_role: "Provides prompt construction interface that combines command template with epic context"
+
+  - id: create-epic-split-workflow
+    description: |
+      Add split workflow to cli/commands/create_epic.py to handle oversized epics.
+
+      After epic creation succeeds, this enhancement validates ticket count and orchestrates the split process when needed.
+
+      Implementation requirements:
+      - After epic file created, call EpicValidator.parse_epic_yaml()
+      - Check ticket_count with EpicValidator.validate_ticket_count()
+      - If >= 13: invoke handle_split_workflow()
+      - handle_split_workflow() must:
+        - Build specialist prompt using PromptBuilder.build_split_epic()
+        - Invoke Claude subprocess with specialist prompt
+        - Create subdirectories for each split epic
+        - Archive original epic with .original suffix
+        - Display split results with epic names and ticket counts
+      - If < 13: success, done (no split needed)
+
+      File location: cli/commands/create_epic.py
+
+      Coordination role: Orchestrates entire split workflow from validation to completion
+    depends_on:
+      - epic-validator-module
+      - prompts-build-split-epic
+    critical: true
+    coordination_role: "Main orchestration point that coordinates validation, splitting, and file operations"
+
+  - id: subdirectory-creation-logic
+    description: |
+      Implement create_split_subdirectories() in cli/commands/create_epic.py.
+
+      Creates the subdirectory structure for each split epic with proper organization.
+
+      Implementation requirements:
+      - create_split_subdirectories(base_dir: str, epic_names: list[str]) -> list[str]
+      - For each epic name:
+        - Create [base-dir]/[epic-name]/ directory
+        - Create [base-dir]/[epic-name]/tickets/ subdirectory
+        - Validate paths are within .epics/ directory (security)
+      - Return list of created directory paths
+      - Handle directory creation errors gracefully
+
+      File location: cli/commands/create_epic.py
+
+      Coordination role: Provides directory structure that matches specialist agent output expectations
+    depends_on:
+      - create-epic-split-workflow
+    critical: false
+    coordination_role: "Creates file system structure that split epics will be written into"
+
+  - id: archive-original-epic
+    description: |
+      Implement archive_original_epic() in cli/commands/create_epic.py.
+
+      Archives the original oversized epic by renaming it with .original suffix for reference.
+
+      Implementation requirements:
+      - archive_original_epic(epic_path: str) -> str
+      - Rename [epic].epic.yaml to [epic].epic.yaml.original
+      - Preserve file content exactly (no modifications)
+      - Return path to archived file
+      - Handle file operation errors gracefully
+      - Validate epic_path is within .epics/ directory (security)
+
+      File location: cli/commands/create_epic.py
+
+      Coordination role: Preserves original epic for reference while clearing space for split epics
+    depends_on:
+      - create-epic-split-workflow
+    critical: false
+    coordination_role: "Ensures original epic is preserved while making room for split epics"
+
+  - id: split-result-display
+    description: |
+      Add display logic to show split results in cli/commands/create_epic.py.
+
+      After split completes successfully, display clear feedback about what was created.
+
+      Implementation requirements:
+      - Display total split: "Epic split into N independent deliverables (X → Y tickets)"
+      - List each created epic: "Created: [path] (N tickets)"
+      - Show archived original: "Original epic archived as: [path]"
+      - Emphasize independence: "Execute each epic independently - no dependencies between them"
+      - Use clear, actionable messaging
+
+      File location: cli/commands/create_epic.py
+
+      Coordination role: Provides user feedback about split process and next steps
+    depends_on:
+      - create-epic-split-workflow
+      - subdirectory-creation-logic
+      - archive-original-epic
+    critical: false
+    coordination_role: "Communicates split results and epic independence to user"
+
+  - id: split-edge-case-handling
+    description: |
+      Add edge case handling to split workflow in cli/commands/create_epic.py.
+
+      Handle cases where splitting may fail or produce suboptimal results.
+
+      Implementation requirements:
+      - Circular dependencies: Keep all tickets with circular deps in same epic
+      - Long dependency chain: Cannot split - keep entire chain in one epic, warn user
+      - Too many tickets: Create 3+ independent epics if needed
+      - Cannot achieve independence: Fail split, warn user epic is too coupled to split
+      - Add --no-split flag: Skip splitting workflow, warn about size implications
+      - Validate split epics meet independence criteria before finalizing
+
+      File location: cli/commands/create_epic.py
+
+      Coordination role: Ensures split process handles complex dependency scenarios correctly
+    depends_on:
+      - create-epic-split-workflow
+    critical: false
+    coordination_role: "Handles dependency edge cases and ensures split quality"
+
+  - id: integration-testing
+    description: |
+      Create integration tests for epic splitting workflow.
+
+      Validate the entire split process works correctly across all scenarios defined in the specification.
+
+      Test scenarios:
+      1. Epic with exactly 12 tickets - should NOT split
+      2. Epic with 13 independent tickets - should split into 2 independent epics
+      3. Epic with 25 independent tickets - should split into 2-3 independent epics
+      4. Epic with 20 tickets in dependency chain - should NOT split (warn user)
+      5. Epic with 40 tickets - should split into 3+ independent epics
+      6. Verify each split epic is fully independent (no cross-epic dependencies)
+      7. Verify dependencies preserved within each epic
+      8. Verify ticket quality maintained after split
+      9. Verify original epic is archived correctly
+      10. Verify --no-split flag bypasses workflow
+
+      File location: tests/integration/test_epic_splitting.py
+
+      Coordination role: Validates all coordination contracts work together correctly
+    depends_on:
+      - create-epic-split-workflow
+      - subdirectory-creation-logic
+      - archive-original-epic
+      - split-result-display
+      - split-edge-case-handling
+    critical: true
+    coordination_role: "Validates end-to-end coordination and integration contracts"
