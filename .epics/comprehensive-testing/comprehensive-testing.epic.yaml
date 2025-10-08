@@ -1,0 +1,586 @@
+epic: "Comprehensive Testing Infrastructure"
+description: "Establish >90% test coverage with fast, reliable unit and integration tests. All Claude CLI interactions mocked with real LLM response fixtures."
+ticket_count: 9
+
+acceptance_criteria:
+  - ">90% code coverage verified by pytest-cov"
+  - "All tests run in <30 seconds total"
+  - "Zero sleeps, zero async antipatterns in tests"
+  - "All subprocess calls mocked with real LLM fixtures"
+  - "All file I/O mocked or uses temp directories"
+  - "All critical paths tested (happy + error cases)"
+  - "Integration tests cover all component collaborations"
+  - "CI/CD pipeline fails if coverage drops below 90%"
+  - "Tests are deterministic (no flakes)"
+
+rollback_on_failure: true
+
+coordination_requirements:
+  directory_structure:
+    required_paths:
+      - "tests/unit/commands"
+      - "tests/unit/core"
+      - "tests/unit/utils"
+      - "tests/integration"
+      - "tests/fixtures/claude_responses"
+      - "tests/fixtures/sample_specs"
+      - "tests/fixtures/sample_epics"
+    organization_patterns:
+      test_files: "tests/{unit,integration}/test_*.py"
+      fixtures: "tests/fixtures/{category}/{name}.{json,md,yaml}"
+      shared_fixtures: "tests/conftest.py"
+      config: "tests/pytest.ini"
+    shared_locations:
+      conftest: "tests/conftest.py"
+      pytest_config: "tests/pytest.ini"
+      coverage_config: ".coveragerc"
+
+  breaking_changes_prohibited:
+    - "Existing module APIs in cli/commands/, cli/core/, cli/utils/"
+    - "ProjectContext interface and methods"
+    - "ClaudeRunner execute() method signature"
+    - "PromptBuilder method signatures"
+
+  shared_interfaces:
+    MockProjectContext:
+      - "Must provide same interface as ProjectContext"
+      - "Returns temp directories for all path properties"
+      - "Compatible with all command and core modules"
+    ClaudeResponseFixture:
+      - "JSON structure: {command, input, stdout, stderr, returncode, session_id}"
+      - "Used by all tests that invoke Claude CLI"
+      - "Must match actual subprocess.run return value structure"
+    MockSubprocess:
+      - "Patches subprocess.run globally"
+      - "Returns Mock with returncode, stdout, stderr attributes"
+      - "Uses ClaudeResponseFixture data"
+
+  performance_contracts:
+    test_suite_runtime: "<30 seconds total for all tests"
+    unit_test_runtime: "<10 seconds for all unit tests"
+    integration_test_runtime: "<20 seconds for all integration tests"
+    coverage_threshold: ">=90% code coverage required"
+
+  security_constraints:
+    - "No real Claude CLI invocations in tests (avoid API costs)"
+    - "No network calls in tests (fully offline)"
+    - "All file operations must use temp directories or mocks"
+
+  architectural_decisions:
+    technology_choices:
+      - "pytest as test runner and fixture framework"
+      - "pytest-cov for coverage reporting"
+      - "pytest-mock for mocking and spying"
+      - "pyfakefs or tmp_path for filesystem mocking"
+      - "freezegun for time mocking"
+    patterns:
+      - "All tests must be deterministic (no random data, no real time)"
+      - "Shared fixtures in conftest.py, test-specific fixtures in test files"
+      - "Integration tests test workflows across multiple components"
+      - "Unit tests test single functions/methods in isolation"
+    constraints:
+      - "Zero time.sleep() calls in tests"
+      - "Zero async/await in tests (fully synchronous)"
+      - "All external dependencies mocked (subprocess, filesystem, time)"
+      - "Test files must follow naming convention test_*.py"
+
+  function_profiles:
+    conftest:
+      mock_project_context:
+        arity: 1
+        intent: "Creates a mock ProjectContext with temporary directories for testing"
+        signature: "@pytest.fixture\ndef mock_project_context(tmp_path) -> ProjectContext"
+      claude_response_fixture:
+        arity: 0
+        intent: "Loads Claude response fixtures from JSON files"
+        signature: "@pytest.fixture\ndef claude_response_fixture() -> Dict[str, Any]"
+      mock_subprocess:
+        arity: 2
+        intent: "Mocks subprocess.run with Claude response fixtures"
+        signature: "@pytest.fixture\ndef mock_subprocess(mocker, claude_response_fixture) -> Mock"
+      load_fixture:
+        arity: 1
+        intent: "Loads a specific fixture by name from fixtures directory"
+        signature: "@pytest.fixture\ndef load_fixture(request) -> Callable[[str], Dict]"
+
+  integration_contracts:
+    test-infrastructure-setup:
+      provides:
+        - "pytest configuration (pytest.ini)"
+        - "Coverage configuration (.coveragerc)"
+        - "Shared fixture infrastructure (conftest.py)"
+        - "Makefile test targets"
+      consumes: []
+      interfaces:
+        - "conftest.py must export all shared fixtures"
+        - "pytest.ini must configure testpaths, coverage thresholds"
+
+    test-fixture-capture:
+      provides:
+        - "Real Claude response fixtures in tests/fixtures/claude_responses/"
+        - "Sample spec files in tests/fixtures/sample_specs/"
+        - "Sample epic files in tests/fixtures/sample_epics/"
+      consumes: []
+      interfaces:
+        - "Fixture JSON structure: {command, input, stdout, stderr, returncode, session_id}"
+
+    test-core-claude:
+      provides:
+        - "Tests for ClaudeRunner.execute() method"
+        - "Tests for session_id generation and propagation"
+      consumes:
+        - "mock_subprocess fixture from test-infrastructure-setup"
+        - "claude_response_fixture from test-fixture-capture"
+      interfaces:
+        - "Uses ClaudeResponseFixture interface"
+        - "Mocks subprocess.run"
+
+    test-core-prompts:
+      provides:
+        - "Tests for PromptBuilder methods (create-epic, create-tickets, execute-epic, execute-ticket)"
+      consumes:
+        - "mock_project_context from test-infrastructure-setup"
+      interfaces:
+        - "Uses MockProjectContext interface"
+
+    test-core-context:
+      provides:
+        - "Tests for ProjectContext initialization and path resolution"
+      consumes:
+        - "tmp_path or pyfakefs for filesystem mocking"
+      interfaces:
+        - "Uses tmp_path pytest fixture"
+
+    test-utils-modules:
+      provides:
+        - "Tests for PathResolver (resolve_file_argument, line notation, inference)"
+        - "Tests for EpicValidator (parse_epic, validate_ticket_count, circular dependencies)"
+        - "Tests for CommitParser (extract_session_id, git log parsing)"
+      consumes:
+        - "tmp_path for PathResolver filesystem tests"
+        - "Sample epic fixtures from test-fixture-capture for EpicValidator"
+        - "mock_subprocess for CommitParser git commands"
+      interfaces:
+        - "Tests all utility modules used by command modules"
+        - "Uses sample_epics fixtures, tmp_path, and subprocess mocks"
+
+    test-commands-creation:
+      provides:
+        - "Tests for create_epic command (success, failure, validation, splitting)"
+        - "Tests for create_tickets command (specialist agent invocation)"
+      consumes:
+        - "mock_project_context from test-infrastructure-setup"
+        - "mock_subprocess from test-infrastructure-setup"
+        - "claude_response_fixture from test-fixture-capture"
+      interfaces:
+        - "Uses MockProjectContext, ClaudeResponseFixture, MockSubprocess"
+        - "Tests both epic and ticket creation workflows"
+
+    test-commands-execution:
+      provides:
+        - "Tests for execute_epic command (orchestration, dependency management)"
+        - "Tests for execute_ticket command (context resolution, session propagation)"
+      consumes:
+        - "mock_project_context from test-infrastructure-setup"
+        - "mock_subprocess from test-infrastructure-setup"
+        - "Sample epic fixtures from test-fixture-capture"
+      interfaces:
+        - "Uses MockProjectContext, MockSubprocess, sample_epics fixtures"
+        - "Tests both epic and ticket execution workflows"
+
+    test-integration-workflows:
+      provides:
+        - "End-to-end workflow tests (create epic, execute epic, splitting, path resolution)"
+      consumes:
+        - "All shared fixtures from test-infrastructure-setup"
+        - "All sample fixtures from test-fixture-capture"
+        - "All unit test coverage from other tickets"
+      interfaces:
+        - "Tests full workflows across multiple components"
+        - "Validates component integration and coordination"
+
+tickets:
+  - id: test-infrastructure-setup
+    description: |
+      Set up pytest testing infrastructure with shared fixtures and configuration.
+
+      **Tasks:**
+      1. Add pytest dependencies to pyproject.toml (pytest, pytest-cov, pytest-mock, pyfakefs, freezegun)
+      2. Create tests/conftest.py with shared fixtures:
+         - mock_project_context(tmp_path): Mock ProjectContext with temp directories
+         - claude_response_fixture(): Load Claude response fixtures
+         - mock_subprocess(mocker, claude_response_fixture): Mock subprocess.run
+         - load_fixture(request): Load specific fixture by name
+      3. Create tests/pytest.ini:
+         - testpaths = tests
+         - addopts for coverage (--cov=cli, --cov-fail-under=90)
+         - markers for unit and integration tests
+      4. Create .coveragerc:
+         - source = cli
+         - omit tests and cache directories
+         - exclude_lines for pragma: no cover
+      5. Add Makefile targets:
+         - test: Run all tests
+         - test-unit: Run unit tests only
+         - test-integration: Run integration tests only
+         - test-cov: Run with HTML coverage report
+      6. Create directory structure:
+         - tests/unit/commands/
+         - tests/unit/core/
+         - tests/unit/utils/
+         - tests/integration/
+         - tests/fixtures/claude_responses/
+         - tests/fixtures/sample_specs/
+         - tests/fixtures/sample_epics/
+
+      **Deliverables:**
+      - pyproject.toml updated with pytest dependencies
+      - tests/conftest.py with all shared fixtures
+      - tests/pytest.ini with coverage configuration
+      - .coveragerc with coverage settings
+      - Makefile with test targets
+      - Complete tests/ directory structure
+
+      **Coordination role:** Provides foundation for all test tickets (shared fixtures, config, directory structure)
+    depends_on: []
+    critical: true
+    coordination_role: "Provides shared fixture infrastructure and configuration used by all test tickets"
+
+  - id: test-fixture-capture
+    description: |
+      Create capture script and generate real Claude response fixtures.
+
+      **Tasks:**
+      1. Create tests/fixtures/capture_claude_responses.py:
+         - capture_response(prompt, name): Run real Claude CLI and capture output
+         - Save as JSON with structure: {name, prompt, stdout, stderr, returncode, session_id}
+      2. Capture real Claude responses for key scenarios:
+         - create_epic_success.json
+         - create_epic_failure.json
+         - execute_ticket_success.json
+         - execute_epic_success.json
+         - create_tickets_success.json
+      3. Create sample spec fixtures (tests/fixtures/sample_specs/):
+         - simple_spec.md: Basic epic specification
+         - complex_spec.md: Multi-layer specification
+      4. Create sample epic fixtures (tests/fixtures/sample_epics/):
+         - simple.epic.yaml: 3-5 tickets, simple dependencies
+         - complex.epic.yaml: 10-12 tickets, multi-layer dependencies
+         - circular_deps.epic.yaml: Invalid epic with circular dependencies (for validation tests)
+         - oversized.epic.yaml: 15+ tickets for split workflow tests
+
+      **Deliverables:**
+      - tests/fixtures/capture_claude_responses.py script
+      - 5+ Claude response fixtures in tests/fixtures/claude_responses/
+      - 2+ sample specs in tests/fixtures/sample_specs/
+      - 4+ sample epics in tests/fixtures/sample_epics/
+
+      **Coordination role:** Provides real LLM fixtures and sample data used by all test tickets
+    depends_on: [test-infrastructure-setup]
+    critical: true
+    coordination_role: "Provides real Claude response fixtures and sample test data"
+
+  - id: test-core-claude
+    description: |
+      Unit tests for cli/core/claude.py (ClaudeRunner).
+
+      **Test cases:**
+      1. test_generate_session_id():
+         - Generates session_id if not provided
+         - Uses provided session_id if given
+      2. test_execute_success():
+         - Pipes prompt via stdin correctly
+         - Returns (exit_code, session_id) tuple
+         - Passes console for spinner display
+      3. test_execute_subprocess_error():
+         - Handles Claude CLI not found
+         - Returns non-zero exit code on failure
+      4. test_stdout_stderr_redirection():
+         - Captures stdout/stderr properly
+         - Redirects output as expected
+      5. test_session_id_extraction():
+         - Extracts session_id from stdout JSON
+         - Handles missing session_id in output
+
+      **Mocking strategy:**
+      - Mock subprocess.run using mock_subprocess fixture
+      - Use claude_response_fixture for realistic responses
+      - No real Claude CLI invocations
+
+      **Deliverables:**
+      - tests/unit/core/test_claude.py with 5+ test cases
+      - All ClaudeRunner methods tested
+      - Coverage >90% for cli/core/claude.py
+
+      **Coordination role:** Tests core Claude CLI interaction used by all commands
+    depends_on: [test-infrastructure-setup, test-fixture-capture]
+    critical: true
+    coordination_role: "Tests ClaudeRunner which is used by all command modules"
+
+  - id: test-core-prompts
+    description: |
+      Unit tests for cli/core/prompts.py (PromptBuilder).
+
+      **Test cases:**
+      1. test_build_create_epic_prompt():
+         - Includes spec file path
+         - Includes naming requirements (.epic.yaml)
+         - Reads command file from context.claude_dir
+      2. test_build_create_tickets_prompt():
+         - Includes epic file path
+         - Includes subdirectory for split epics
+      3. test_build_execute_epic_prompt():
+         - Includes epic file path
+         - Includes session_id if provided
+      4. test_build_execute_ticket_prompt():
+         - Includes ticket_id and epic context
+         - Includes session_id propagation
+      5. test_command_file_reading():
+         - Reads from context.claude_dir
+         - Handles missing command files
+
+      **Mocking strategy:**
+      - Use mock_project_context for path resolution
+      - Mock file reading for command files
+      - No real file I/O
+
+      **Deliverables:**
+      - tests/unit/core/test_prompts.py with 5+ test cases
+      - All PromptBuilder methods tested
+      - Coverage >90% for cli/core/prompts.py
+
+      **Coordination role:** Tests prompt building used by all commands
+    depends_on: [test-infrastructure-setup]
+    critical: true
+    coordination_role: "Tests PromptBuilder which constructs prompts for all commands"
+
+  - id: test-core-context
+    description: |
+      Unit tests for cli/core/context.py (ProjectContext).
+
+      **Test cases:**
+      1. test_initialization():
+         - Initializes with project root
+         - Sets epics_dir, claude_dir correctly
+      2. test_path_resolution():
+         - Resolves relative paths correctly
+         - Handles absolute paths
+      3. test_directory_properties():
+         - epics_dir property returns correct path
+         - claude_dir property returns correct path
+      4. test_file_existence_checks():
+         - Validates directory existence
+         - Creates directories if missing
+
+      **Mocking strategy:**
+      - Use tmp_path for filesystem setup
+      - No real project directory access
+
+      **Deliverables:**
+      - tests/unit/core/test_context.py with 4+ test cases
+      - All ProjectContext methods tested
+      - Coverage >90% for cli/core/context.py
+
+      **Coordination role:** Tests ProjectContext used by all modules for path resolution
+    depends_on: [test-infrastructure-setup]
+    critical: true
+    coordination_role: "Tests ProjectContext which provides path resolution for all modules"
+
+  - id: test-utils-modules
+    description: |
+      Unit tests for all utility modules (path_resolver, epic_validator, commit_parser).
+
+      **Test Coverage for PathResolver (cli/utils/path_resolver.py):**
+      1. test_strip_line_notation():
+         - Strips line notation (file.md:123)
+         - Returns clean file path
+      2. test_file_exists():
+         - Returns file if it exists
+      3. test_infer_from_directory_single_match():
+         - Infers file from directory with pattern
+         - Returns single matching file
+      4. test_infer_from_directory_multiple_matches():
+         - Raises error if multiple matches
+      5. test_infer_from_directory_no_matches():
+         - Raises error if no matches
+      6. test_directory_without_pattern():
+         - Handles directory without pattern
+      7. test_nonexistent_path():
+         - Raises error for nonexistent paths
+
+      **Test Coverage for EpicValidator (cli/utils/epic_validator.py):**
+      1. test_parse_epic_valid():
+         - Parses valid YAML structure
+         - Extracts ticket_count field
+      2. test_parse_epic_missing_ticket_count():
+         - Raises error if ticket_count missing
+      3. test_validate_ticket_count_limits():
+         - Validates ticket_count <= 12
+         - Triggers split workflow if > 12
+      4. test_detect_circular_dependencies():
+         - Detects circular dependency chains
+         - Raises error with cycle information
+      5. test_validate_epic_structure():
+         - Validates required fields (epic, description, tickets)
+         - Validates ticket structure (id, description, depends_on)
+      6. test_dependency_graph_construction():
+         - Builds correct dependency graph
+         - Identifies independent tickets
+
+      **Test Coverage for CommitParser (cli/utils/commit_parser.py):**
+      1. test_extract_session_id_present():
+         - Extracts session_id from commit message
+      2. test_extract_session_id_missing():
+         - Returns None if session_id not found
+      3. test_parse_git_log_output():
+         - Parses git log output correctly
+         - Handles multiple commits
+      4. test_parse_empty_log():
+         - Handles empty git log output
+
+      **Mocking strategy:**
+      - Use tmp_path for path_resolver filesystem tests
+      - Use sample_epics fixtures for epic_validator tests
+      - Mock subprocess.run for commit_parser git commands
+      - No real filesystem or git operations
+
+      **Deliverables:**
+      - tests/unit/utils/test_path_resolver.py with 7+ test cases
+      - tests/unit/utils/test_epic_validator.py with 6+ test cases
+      - tests/unit/utils/test_commit_parser.py with 4+ test cases
+      - Coverage >90% for all cli/utils/ modules
+
+      **Coordination role:** Tests all utility modules used by command modules
+    depends_on: [test-infrastructure-setup, test-fixture-capture]
+    critical: true
+    coordination_role: "Tests all utility modules (path resolution, epic validation, commit parsing) used by commands"
+
+  - id: test-commands-creation
+    description: |
+      Unit tests for epic and ticket creation commands (create_epic, create_tickets).
+
+      **Test Coverage for create_epic.py:**
+      1. test_create_epic_success():
+         - Creates epic from spec successfully
+         - Displays session_id on success
+      2. test_missing_spec_file():
+         - Handles missing spec file error
+      3. test_validate_epic_filename():
+         - Validates .epic.yaml extension
+         - Renames incorrectly named epics
+      4. test_invoke_split_workflow():
+         - Invokes split workflow when ticket_count >= 13
+      5. test_subprocess_failure():
+         - Handles Claude CLI subprocess failures
+      6. test_path_resolution():
+         - Uses path_resolver for spec argument
+
+      **Test Coverage for create_tickets.py:**
+      1. test_create_tickets_success():
+         - Invokes specialist agent successfully
+      2. test_subdirectory_creation():
+         - Creates subdirectory for split epics
+      3. test_original_epic_archival():
+         - Archives original oversized epic
+      4. test_subprocess_failure():
+         - Handles specialist agent failures
+
+      **Mocking strategy:**
+      - Mock subprocess.run with claude_response_fixture
+      - Use mock_project_context
+      - Mock path_resolver and filesystem operations
+
+      **Deliverables:**
+      - tests/unit/commands/test_create_epic.py with 6+ test cases
+      - tests/unit/commands/test_create_tickets.py with 4+ test cases
+      - Coverage >90% for both command modules
+
+      **Coordination role:** Tests epic/ticket creation commands
+    depends_on: [test-infrastructure-setup, test-fixture-capture, test-core-claude, test-core-prompts, test-core-context, test-utils-modules]
+    critical: true
+    coordination_role: "Tests create-epic and create-tickets commands for epic creation workflows"
+
+  - id: test-commands-execution
+    description: |
+      Unit tests for epic and ticket execution commands (execute_epic, execute_ticket).
+
+      **Test Coverage for execute_epic.py:**
+      1. test_execute_epic_success():
+         - Parses epic and orchestrates tickets
+         - Spawns Task agents correctly
+      2. test_dependency_management():
+         - Respects dependency ordering
+         - Executes independent tickets in parallel
+      3. test_session_id_propagation():
+         - Propagates session_id through workflow
+      4. test_epic_state_tracking():
+         - Tracks epic execution state
+      5. test_invalid_epic():
+         - Handles invalid epic structure
+
+      **Test Coverage for execute_ticket.py:**
+      1. test_execute_ticket_success():
+         - Executes ticket successfully
+      2. test_context_resolution():
+         - Resolves epic and ticket context
+      3. test_session_id_propagation():
+         - Uses session_id from epic or commit history
+      4. test_subprocess_failure():
+         - Handles Claude CLI failures
+
+      **Mocking strategy:**
+      - Use sample_epics fixtures
+      - Mock Task spawning
+      - Mock subprocess.run with claude_response_fixture
+      - Use mock_project_context
+      - Mock commit_parser
+
+      **Deliverables:**
+      - tests/unit/commands/test_execute_epic.py with 5+ test cases
+      - tests/unit/commands/test_execute_ticket.py with 4+ test cases
+      - Coverage >90% for both command modules
+
+      **Coordination role:** Tests epic/ticket execution commands
+    depends_on: [test-infrastructure-setup, test-fixture-capture, test-core-claude, test-core-prompts, test-core-context, test-utils-modules]
+    critical: true
+    coordination_role: "Tests execute-epic and execute-ticket commands for epic execution workflows"
+
+  - id: test-integration-workflows
+    description: |
+      Integration tests for end-to-end workflows.
+
+      **Test files:**
+      1. tests/integration/test_create_epic_workflow.py:
+         - Context resolution → prompt building → subprocess → validation
+         - Epic splitting workflow when oversized
+         - File operations and path handling
+      2. tests/integration/test_execute_epic_workflow.py:
+         - Epic parsing → ticket orchestration → Task spawning
+         - Dependency management and ordering
+         - Session ID propagation through workflow
+      3. tests/integration/test_epic_splitting_workflow.py:
+         - Detection of oversized epic
+         - Specialist agent invocation
+         - Subdirectory creation and original epic archival
+      4. tests/integration/test_path_resolution_workflow.py:
+         - Directory inference → file resolution → context resolution
+         - Line number stripping → validation
+         - Error handling across components
+
+      **Mocking strategy:**
+      - Use all shared fixtures (mock_project_context, mock_subprocess, claude_response_fixture)
+      - Use sample_epics and sample_specs fixtures
+      - Test real component integration (no component mocks)
+
+      **Deliverables:**
+      - tests/integration/test_create_epic_workflow.py
+      - tests/integration/test_execute_epic_workflow.py
+      - tests/integration/test_epic_splitting_workflow.py
+      - tests/integration/test_path_resolution_workflow.py
+      - >90% coverage of component interactions
+      - All integration tests run in <20 seconds
+
+      **Coordination role:** Tests full workflows across all components, validates integration
+    depends_on: [test-commands-creation, test-commands-execution]
+    critical: true
+    coordination_role: "Tests end-to-end workflows validating all component coordination"

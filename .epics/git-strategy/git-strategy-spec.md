@@ -2,18 +2,22 @@
 
 ## Overview
 
-Standardize git operations in epic/ticket execution by implementing a scripted git strategy layer. This removes ambiguity from LLM-driven git operations while preserving flexibility where needed.
+Standardize git operations in epic/ticket execution by implementing a scripted
+git strategy layer. This removes ambiguity from LLM-driven git operations while
+preserving flexibility where needed.
 
 ## Problem Statement
 
-Current git strategy is entirely LLM-driven through prompt instructions. This leads to:
+Current git strategy is entirely LLM-driven through prompt instructions. This
+leads to:
 
 - **Inconsistent commit messages** - Session IDs suggested but not enforced
 - **Branch naming variations** - LLMs may interpret ticket names differently
 - **Manual PR creation errors** - Complex gh CLI commands in prompts
 - **No branch cleanup** - Merged ticket branches accumulate
 - **Unclear merge strategy** - No defined approach for epic → main merges
-- **Git operation failures** - LLMs make git mistakes (wrong base commits, push errors)
+- **Git operation failures** - LLMs make git mistakes (wrong base commits, push
+  errors)
 
 ## Goals
 
@@ -33,6 +37,7 @@ Current git strategy is entirely LLM-driven through prompt instructions. This le
 ## Solution: Git Strategy Script Layer
 
 Create `~/.claude/scripts/epic-git.sh` with standardized functions that:
+
 - Enforce naming conventions
 - Structure commit metadata
 - Handle PR creation
@@ -45,16 +50,19 @@ Create `~/.claude/scripts/epic-git.sh` with standardized functions that:
 **Purpose:** Create epic branch from main and push to remote
 
 **Usage:**
+
 ```bash
 source ~/.claude/scripts/epic-git.sh
 create_epic_branch "user-authentication" "feat/add-user-auth"
 ```
 
 **Parameters:**
+
 - `epic_name` - Epic identifier (kebab-case)
 - `description` - Brief epic description for PR
 
 **Behavior:**
+
 - Validates on `main` branch
 - Creates `epic/{epic_name}` branch
 - Pushes to origin with `-u` flag
@@ -62,6 +70,7 @@ create_epic_branch "user-authentication" "feat/add-user-auth"
 - Returns epic branch name and PR URL
 
 **Output:**
+
 ```json
 {
   "branch": "epic/user-authentication",
@@ -75,22 +84,26 @@ create_epic_branch "user-authentication" "feat/add-user-auth"
 **Purpose:** Create ticket branch from specified base commit
 
 **Usage:**
+
 ```bash
 create_ticket_branch "auth-base-models" "abc123def" "epic/user-authentication"
 ```
 
 **Parameters:**
+
 - `ticket_id` - Exact ticket ID from epic YAML
 - `base_commit` - SHA to branch from (epic baseline or dependency commit)
 - `epic_branch` - Epic branch name (for validation)
 
 **Behavior:**
+
 - Validates base commit exists
 - Creates `ticket/{ticket_id}` branch from base commit
 - Does NOT push (ticket work happens before push)
 - Returns branch name and base commit
 
 **Output:**
+
 ```json
 {
   "branch": "ticket/auth-base-models",
@@ -103,27 +116,33 @@ create_ticket_branch "auth-base-models" "abc123def" "epic/user-authentication"
 **Purpose:** Commit ticket work with enforced metadata
 
 **Usage:**
+
 ```bash
 commit_ticket_work "Add user authentication models" "auth-base-models" "session-uuid-here"
 ```
 
 **Parameters:**
+
 - `message` - Commit message (LLM-provided, descriptive)
 - `ticket_id` - Ticket identifier
 - `session_id` - Session UUID for traceability
 
 **Behavior:**
+
 - Stages all changes (`git add -A`)
 - Creates commit with structured message:
+
   ```
   [ticket-id] message
-  
+
   ticket_id: auth-base-models
   session_id: uuid-here
   ```
+
 - Returns commit SHA
 
 **Output:**
+
 ```json
 {
   "commit_sha": "def456abc",
@@ -136,17 +155,20 @@ commit_ticket_work "Add user authentication models" "auth-base-models" "session-
 **Purpose:** Create numbered PR for ticket targeting epic branch
 
 **Usage:**
+
 ```bash
 create_ticket_pr "ticket/auth-base-models" "epic/user-authentication" "1" "Add base authentication models"
 ```
 
 **Parameters:**
+
 - `ticket_branch` - Ticket branch name
 - `epic_branch` - Epic branch to target
 - `sequence` - PR number in merge order (from topological sort)
 - `title` - PR title (without number prefix)
 
 **Behavior:**
+
 - Pushes ticket branch to origin
 - Creates PR: `ticket/name → epic/name`
 - Title format: `[{sequence}] {title}`
@@ -154,6 +176,7 @@ create_ticket_pr "ticket/auth-base-models" "epic/user-authentication" "1" "Add b
 - Returns PR URL
 
 **Output:**
+
 ```json
 {
   "pr_url": "https://github.com/org/repo/pull/124",
@@ -167,16 +190,19 @@ create_ticket_pr "ticket/auth-base-models" "epic/user-authentication" "1" "Add b
 **Purpose:** Update epic PR from draft to ready with summary
 
 **Usage:**
+
 ```bash
 finalize_epic_pr "epic/user-authentication" "summary text" "pr-url-1,pr-url-2,pr-url-3"
 ```
 
 **Parameters:**
+
 - `epic_branch` - Epic branch name
 - `summary` - Epic summary (LLM-generated)
 - `ticket_pr_urls` - Comma-separated ticket PR URLs in merge order
 
 **Behavior:**
+
 - Commits artifacts to epic branch
 - Pushes epic branch
 - Updates PR from draft to ready
@@ -191,14 +217,17 @@ finalize_epic_pr "epic/user-authentication" "summary text" "pr-url-1,pr-url-2,pr
 **Purpose:** Delete ticket branch after successful merge
 
 **Usage:**
+
 ```bash
 cleanup_merged_branch "ticket/auth-base-models"
 ```
 
 **Parameters:**
+
 - `branch_name` - Branch to delete
 
 **Behavior:**
+
 - Verifies branch is merged to epic branch
 - Deletes local branch
 - Deletes remote branch
@@ -208,18 +237,20 @@ cleanup_merged_branch "ticket/auth-base-models"
 
 #### execute-epic Command Changes
 
-**Current:** LLM receives prompt with git instructions
-**New:** LLM calls git strategy functions
+**Current:** LLM receives prompt with git instructions **New:** LLM calls git
+strategy functions
 
 ```markdown
 2. Initialize epic branch and state tracking:
    - Source git strategy: source ~/.claude/scripts/epic-git.sh
-   - Create epic branch: result=$(create_epic_branch "{epic_name}" "{description}")
+   - Create epic branch: result=$(create_epic_branch "{epic_name}"
+     "{description}")
    - Extract epic branch, PR URL, baseline commit from result JSON
    - Record in epic-state.json
 ```
 
 **Advantages:**
+
 - Consistent branch naming
 - Automatic PR creation
 - No gh CLI syntax errors
@@ -227,22 +258,24 @@ cleanup_merged_branch "ticket/auth-base-models"
 
 #### execute-ticket Command Changes
 
-**Current:** LLM creates branch, commits, with flexible approach
-**New:** LLM uses scripted functions for structure, flexibility for content
+**Current:** LLM creates branch, commits, with flexible approach **New:** LLM
+uses scripted functions for structure, flexibility for content
 
 ```markdown
 2. Set up git environment:
    - Source git strategy: source ~/.claude/scripts/epic-git.sh
-   - Create ticket branch: result=$(create_ticket_branch "{ticket_id}" "{base_commit}" "{epic_branch}")
-   
-8. Commit all changes:
-   - Commit work: result=$(commit_ticket_work "{descriptive message}" "{ticket_id}" "{session_id}")
+   - Create ticket branch: result=$(create_ticket_branch "{ticket_id}"
+     "{base_commit}" "{epic_branch}")
+3. Commit all changes:
+   - Commit work: result=$(commit_ticket_work "{descriptive message}"
+     "{ticket_id}" "{session_id}")
    - Record final commit SHA from result JSON
 ```
 
 ### Commit Message Format
 
 **Enforced structure:**
+
 ```
 [ticket-id] Short descriptive message (LLM writes this)
 
@@ -255,6 +288,7 @@ epic_id: epic-name
 ```
 
 **Benefits:**
+
 - Machine-parseable metadata
 - Human-readable descriptions
 - Traceability to sessions
@@ -263,15 +297,19 @@ epic_id: epic-name
 ### Branch Naming Convention
 
 **Epic branches:**
+
 ```
 epic/{epic-name}
 ```
+
 Example: `epic/user-authentication`
 
 **Ticket branches:**
+
 ```
 ticket/{ticket-id}
 ```
+
 Example: `ticket/auth-base-models`
 
 **Enforced by script** - No LLM variation possible
@@ -279,6 +317,7 @@ Example: `ticket/auth-base-models`
 ### PR Creation Strategy
 
 **Ticket PRs:**
+
 - Created after ticket completion
 - Title: `[{sequence}] {descriptive title}`
 - Target: Epic branch
@@ -290,6 +329,7 @@ Example: `ticket/auth-base-models`
   - Acceptance criteria checklist
 
 **Epic PR:**
+
 - Created at epic start (draft)
 - Updated at epic completion (ready)
 - Title: `{Epic Name}`
@@ -300,11 +340,12 @@ Example: `ticket/auth-base-models`
 
 ### Branch Cleanup Strategy
 
-**When:** After ticket PR is merged to epic branch
-**How:** `cleanup_merged_branch()` called by orchestrator
-**Scope:** Both local and remote branches deleted
+**When:** After ticket PR is merged to epic branch **How:**
+`cleanup_merged_branch()` called by orchestrator **Scope:** Both local and
+remote branches deleted
 
 **Epic branch cleanup:**
+
 - After epic PR merged to main
 - Delete epic branch local and remote
 - Ticket branches already cleaned up
@@ -312,20 +353,26 @@ Example: `ticket/auth-base-models`
 ## Implementation Plan
 
 ### Phase 1: Create Git Strategy Script
+
 **Deliverables:**
+
 - `~/.claude/scripts/epic-git.sh` with all 6 functions
 - JSON output format for programmatic parsing
 - Error handling and validation
 - Unit tests for git functions
 
 ### Phase 2: Update Command Prompts
+
 **Deliverables:**
+
 - Updated `execute-epic.md` with function calls
 - Updated `execute-ticket.md` with function calls
 - Updated `create-epic.md` with function calls
 
 ### Phase 3: Update Python Commands
+
 **Deliverables:**
+
 - Install script copies `epic-git.sh` to `~/.claude/scripts/`
 - Validation that script exists before execution
 - Error messages if script missing
@@ -333,12 +380,14 @@ Example: `ticket/auth-base-models`
 ## Testing Strategy
 
 **Unit Tests:**
+
 - Test each git function in isolation
 - Mock git commands
 - Validate JSON output format
 - Test error conditions
 
 **Integration Tests:**
+
 - Full epic execution with git strategy
 - Verify branch creation
 - Verify PR creation
@@ -346,6 +395,7 @@ Example: `ticket/auth-base-models`
 - Verify cleanup
 
 **Fixtures:**
+
 - Sample epic YAML files
 - Mock git repositories
 - Mock gh CLI responses
@@ -361,17 +411,17 @@ Example: `ticket/auth-base-models`
 
 ## Risks & Mitigations
 
-**Risk:** Script errors break epic execution
-**Mitigation:** Comprehensive error handling, exit codes, validation
+**Risk:** Script errors break epic execution **Mitigation:** Comprehensive error
+handling, exit codes, validation
 
-**Risk:** LLMs ignore script functions and use raw git
-**Mitigation:** Strong prompt language, validation in orchestrator
+**Risk:** LLMs ignore script functions and use raw git **Mitigation:** Strong
+prompt language, validation in orchestrator
 
-**Risk:** JSON parsing failures
-**Mitigation:** Strict JSON schema, jq validation in script
+**Risk:** JSON parsing failures **Mitigation:** Strict JSON schema, jq
+validation in script
 
-**Risk:** gh CLI version incompatibility
-**Mitigation:** Version check in script, clear error messages
+**Risk:** gh CLI version incompatibility **Mitigation:** Version check in
+script, clear error messages
 
 ## Future Enhancements
 
