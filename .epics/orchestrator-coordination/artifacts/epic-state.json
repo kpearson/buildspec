@@ -1,0 +1,207 @@
+{
+  "epic_id": "orchestrator-coordination",
+  "epic_branch": "epic/orchestrator-coordination",
+  "baseline_commit": "51bf991c73ec6528036a3b74369b06879883b82e",
+  "epic_pr_url": null,
+  "status": "executing_wave",
+  "started_at": "2025-10-08T00:00:00Z",
+  "completed_at": null,
+  "failure_reason": null,
+  "session_id": "a221a351-d368-4fa2-912b-af28a69cf11e",
+  "tickets": {
+    "update-execute-epic-state-machine": {
+      "path": ".epics/orchestrator-coordination/tickets/update-execute-epic-state-machine.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "51bf991c73ec6528036a3b74369b06879883b82e",
+        "branch_name": "ticket/update-execute-epic-state-machine",
+        "final_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc"
+      },
+      "started_at": "2025-10-08T00:01:00Z",
+      "completed_at": "2025-10-08T00:02:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "implement-concurrency-control": {
+      "path": ".epics/orchestrator-coordination/tickets/implement-concurrency-control.md",
+      "depends_on": ["update-execute-epic-state-machine"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc",
+        "branch_name": "ticket/implement-concurrency-control",
+        "final_commit": "42820426eab1529ac4fa13477d0628107e28e50b"
+      },
+      "started_at": "2025-10-08T00:03:00Z",
+      "completed_at": "2025-10-08T00:04:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "define-sub-agent-lifecycle-protocol": {
+      "path": ".epics/orchestrator-coordination/tickets/define-sub-agent-lifecycle-protocol.md",
+      "depends_on": ["update-execute-epic-state-machine"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc",
+        "branch_name": "ticket/define-sub-agent-lifecycle-protocol",
+        "final_commit": "5f07451f1332486c23ac179f34679871c23cefe7"
+      },
+      "started_at": "2025-10-08T00:03:00Z",
+      "completed_at": "2025-10-08T00:04:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "implement-completion-report-validation": {
+      "path": ".epics/orchestrator-coordination/tickets/implement-completion-report-validation.md",
+      "depends_on": ["define-sub-agent-lifecycle-protocol"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "5f07451f1332486c23ac179f34679871c23cefe7",
+        "branch_name": "ticket/implement-completion-report-validation",
+        "final_commit": "895177e3b084068d19a7f70529a4db72db127299"
+      },
+      "started_at": "2025-10-08T00:05:00Z",
+      "completed_at": "2025-10-08T00:06:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "add-error-recovery-workflows": {
+      "path": ".epics/orchestrator-coordination/tickets/add-error-recovery-workflows.md",
+      "depends_on": ["update-execute-epic-state-machine"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc",
+        "branch_name": "ticket/add-error-recovery-workflows",
+        "final_commit": "85720be3e41b6ded4bb9b24b170db0b601b40c3c"
+      },
+      "started_at": "2025-10-08T00:03:00Z",
+      "completed_at": "2025-10-08T00:04:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "implement-base-commit-calculation": {
+      "path": ".epics/orchestrator-coordination/tickets/implement-base-commit-calculation.md",
+      "depends_on": ["update-execute-epic-state-machine"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc",
+        "branch_name": "ticket/implement-base-commit-calculation",
+        "final_commit": "e197e5815f5fa88dac91589d8e46a4009ce7879c"
+      },
+      "started_at": "2025-10-08T00:05:00Z",
+      "completed_at": "2025-10-08T00:06:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "define-git-workflow-strategy": {
+      "path": ".epics/orchestrator-coordination/tickets/define-git-workflow-strategy.md",
+      "depends_on": ["update-execute-epic-state-machine", "implement-base-commit-calculation"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "implement-ticket-branch-merging": {
+      "path": ".epics/orchestrator-coordination/tickets/implement-ticket-branch-merging.md",
+      "depends_on": ["define-git-workflow-strategy", "implement-base-commit-calculation"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "implement-remote-push-logic": {
+      "path": ".epics/orchestrator-coordination/tickets/implement-remote-push-logic.md",
+      "depends_on": ["define-git-workflow-strategy", "implement-ticket-branch-merging"],
+      "critical": false,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "add-atomic-state-updates": {
+      "path": ".epics/orchestrator-coordination/tickets/add-atomic-state-updates.md",
+      "depends_on": ["update-execute-epic-state-machine"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "91fc33d768e6d61c132d9e1af4cd9aba6dc97afc",
+        "branch_name": "ticket/add-atomic-state-updates",
+        "final_commit": "bf90817f566dce79e5e1ee2beb070d94c238a988"
+      },
+      "started_at": "2025-10-08T00:05:00Z",
+      "completed_at": "2025-10-08T00:06:00Z",
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "update-execute-ticket-completion-reporting": {
+      "path": ".epics/orchestrator-coordination/tickets/update-execute-ticket-completion-reporting.md",
+      "depends_on": ["define-sub-agent-lifecycle-protocol"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "add-wave-execution-algorithm": {
+      "path": ".epics/orchestrator-coordination/tickets/add-wave-execution-algorithm.md",
+      "depends_on": [
+        "implement-concurrency-control",
+        "define-sub-agent-lifecycle-protocol",
+        "implement-completion-report-validation",
+        "add-error-recovery-workflows",
+        "implement-base-commit-calculation",
+        "add-atomic-state-updates",
+        "update-execute-ticket-completion-reporting",
+        "implement-ticket-branch-merging",
+        "implement-remote-push-logic"
+      ],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    },
+    "add-orchestrator-integration-tests": {
+      "path": ".epics/orchestrator-coordination/tickets/add-orchestrator-integration-tests.md",
+      "depends_on": ["add-wave-execution-algorithm"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "blocking_dependency": null
+    }
+  }
+}
