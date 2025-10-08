@@ -56,9 +56,13 @@ build:
 	BINARY_NAME="$${TIMESTAMP}-$${GIT_SHA}-buildspec"; \
 	mv dist/buildspec "dist/$${BINARY_NAME}"; \
 	echo "" > dist/.latest; \
-	echo "$${BINARY_NAME}" > dist/.latest
+	echo "$${BINARY_NAME}" > dist/.latest; \
+	mkdir -p "$${HOME}/.local/bin"; \
+	rm -f "$${HOME}/.local/bin/buildspec"; \
+	ln -sf "$(PWD)/dist/$${BINARY_NAME}" "$${HOME}/.local/bin/buildspec"
 	@echo ""
 	@echo "✅ Binary built successfully: dist/$$(cat dist/.latest)"
+	@echo "✅ Symlink updated: ~/.local/bin/buildspec -> dist/$$(cat dist/.latest)"
 	@echo ""
 
 install-binary: build
