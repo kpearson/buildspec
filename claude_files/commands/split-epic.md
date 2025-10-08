@@ -1,6 +1,7 @@
 # split-epic
 
-Analyze and split oversized epics into multiple independent deliverable-focused epics.
+Analyze and split oversized epics into multiple independent deliverable-focused
+epics.
 
 ## Usage
 
@@ -10,9 +11,9 @@ Analyze and split oversized epics into multiple independent deliverable-focused 
 
 ## Description
 
-This command analyzes epics with 13 or more tickets and intelligently splits them
-into multiple fully independent epics, each representing a cohesive deliverable
-capability. The split process:
+This command analyzes epics with 13 or more tickets and intelligently splits
+them into multiple fully independent epics, each representing a cohesive
+deliverable capability. The split process:
 
 - Identifies natural deliverable boundaries within the epic
 - Creates fully independent epics with no cross-epic dependencies
@@ -22,7 +23,8 @@ capability. The split process:
 - Maintains dependency integrity within each epic
 
 **Important**: This command is invoked automatically by the create-epic workflow
-when ticket count >= 13. It can also be run manually on existing oversized epics.
+when ticket count >= 13. It can also be run manually on existing oversized
+epics.
 
 ## Parameters
 
@@ -56,7 +58,8 @@ When this command is invoked:
 
 ## Deliverable-Focused Grouping Criteria
 
-When analyzing tickets for grouping, ask these questions for each potential group:
+When analyzing tickets for grouping, ask these questions for each potential
+group:
 
 1. **What capability does this group provide?**
    - Can you name a specific feature, system, or deliverable?
@@ -79,18 +82,21 @@ When analyzing tickets for grouping, ask these questions for each potential grou
 Apply these heuristics in order when grouping tickets:
 
 ### 1. Full Independence (CRITICAL)
+
 - Each epic must be deployable without any other split epic
 - No shared state, no sequential ordering required
 - Each epic can be executed and tested in isolation
 - **Test**: Could you execute each epic on different days/weeks?
 
 ### 2. Dependency Chains (CRITICAL)
+
 - **NEVER split tickets with dependencies across epics**
 - If ticket A depends on ticket B, they MUST be in the same epic
 - Keep entire dependency chains together in one epic
 - Circular dependencies = keep all involved tickets together
 
 ### 3. Feature Boundaries (PRIMARY)
+
 - Group by complete user-facing or system capabilities
 - Examples:
   - Authentication system (login, session, tokens)
@@ -99,12 +105,14 @@ Apply these heuristics in order when grouping tickets:
 - Each group should deliver a cohesive feature set
 
 ### 4. Architecture Layers (SECONDARY)
+
 - When no clear feature boundaries exist, group by architectural layers:
   - Infrastructure foundation → Core features → Integration & polish
   - Data layer → Business logic → API/UI layer
 - Ensure each layer can be delivered independently
 
 ### 5. Ticket Count Limits (CONSTRAINT)
+
 - **Soft limit**: 8-12 tickets per epic (ideal range)
 - **Hard limit**: 15 tickets maximum per epic
 - **Minimum**: 3 tickets per epic (avoid over-splitting)
@@ -115,6 +123,7 @@ Apply these heuristics in order when grouping tickets:
 Epic names must describe the deliverable capability, not the split itself.
 
 ### Good Epic Names
+
 - `token-caching` - describes the caching capability
 - `user-session-management` - describes session handling
 - `api-rate-limiting` - describes rate limiting feature
@@ -122,6 +131,7 @@ Epic names must describe the deliverable capability, not the split itself.
 - `deployment-automation` - describes automation capability
 
 ### Bad Epic Names
+
 - `user-auth-part1` - "part" indicates incomplete feature
 - `tickets-1-through-12` - describes tickets, not capability
 - `epic-split-1` - describes the split process, not deliverable
@@ -153,25 +163,31 @@ Dependencies are CRITICAL to maintain:
 ## Edge Case Handling
 
 ### Long Dependency Chains
+
 **Problem**: Epic with 20 tickets, all in one dependency chain
 
 **Solution**:
+
 - Cannot split - keep entire chain in one epic
 - Warn user: "Epic has long dependency chain (20 tickets). Cannot split while
   maintaining independence. Consider refactoring to reduce coupling."
 
 ### Circular Dependencies
+
 **Problem**: Multiple tickets with circular dependency relationships
 
 **Solution**:
+
 - Identify all tickets in circular dependency groups
 - Keep each circular group together in one epic
 - May result in larger epics than ideal
 
 ### Too Many Tickets
+
 **Problem**: Epic with 40+ tickets needs splitting but natural groups are large
 
 **Solution**:
+
 - Create 3+ independent epics instead of 2
 - Look for finer-grained deliverable boundaries
 - Example: Split "user-management" into:
@@ -180,18 +196,22 @@ Dependencies are CRITICAL to maintain:
   - `user-permissions` (roles, access control)
 
 ### Cannot Achieve Independence
+
 **Problem**: All tickets are tightly coupled, cannot form independent groups
 
 **Solution**:
+
 - Fail the split process gracefully
 - Report: "Cannot split epic while maintaining independence. All tickets are
   tightly coupled. Consider epic redesign to improve modularity."
 - Keep original epic intact with .original suffix removed
 
 ### Manual Split Override
+
 **Option**: `--no-split` flag
 
 **Behavior**:
+
 - Skip splitting workflow entirely
 - Warn user: "Epic has N tickets (exceeds recommended limit of 12). Proceeding
   without split. Large epics may be harder to execute and track."
@@ -335,6 +355,6 @@ Before finalizing the split, verify:
 ## Related Commands
 
 - `/create-epic`: Creates epic YAML from specification (triggers auto-split if
-  >= 13 tickets)
+  > = 13 tickets)
 - `/execute-epic`: Executes epic tickets (works with split epics independently)
 - `/validate-epic`: Validates epic structure and dependencies
