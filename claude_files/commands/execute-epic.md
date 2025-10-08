@@ -21,6 +21,170 @@ This command orchestrates the execution of an entire epic by:
 **Important**: This command spawns a Task agent that manages multiple sub-agents
 for ticket execution, ensuring autonomous completion of the entire epic.
 
+## State Machine
+
+The epic execution follows a formal state machine pattern with explicit states
+and transitions for both epic-level and ticket-level coordination. This ensures
+deterministic behavior, resumability after crashes, and clear error recovery
+paths.
+
+### Epic-Level States
+
+The epic execution follows this state machine:
+
+| State            | Description                                         | Transitions To                      | Trigger Condition                                |
+| ---------------- | --------------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
+| initializing     | Creating epic branch, artifacts dir, baseline state | ready_to_execute, failed            | Initialization success/failure                   |
+| ready_to_execute | Waiting to spawn next wave                          | executing_wave, completed           | Ready tickets found, or all tickets terminal     |
+| executing_wave   | Sub-agents actively executing                       | ready_to_execute, failed, completed | Sub-agent completion, critical failure, all done |
+| completed        | All tickets complete                                | (terminal)                          | All tickets in completed state                   |
+| failed           | Critical ticket failed, rolling back                | rolled_back, partial_success        | Rollback execution completes                     |
+| rolled_back      | Changes reverted, branches deleted                  | (terminal)                          | Rollback complete                                |
+| partial_success  | Rollback disabled, preserving work                  | (terminal)                          | Critical failure with rollback_on_failure=false  |
+
+### Ticket-Level States
+
+Each ticket progresses through these states:
+
+| State      | Description                                  | Transitions To     | Trigger Condition                            |
+| ---------- | -------------------------------------------- | ------------------ | -------------------------------------------- |
+| pending    | Waiting for dependencies                     | queued, blocked    | Dependencies completed, or dependency failed |
+| queued     | Ready to spawn, waiting for concurrency slot | executing          | Concurrency slot available                   |
+| executing  | Sub-agent actively working                   | validating, failed | Sub-agent returns, or spawn error            |
+| validating | Orchestrator validating completion           | completed, failed  | Validation success/failure                   |
+| completed  | Work complete, artifacts recorded            | (terminal)         | Validation passed                            |
+| failed     | Execution or validation failed               | (terminal)         | Unrecoverable error                          |
+| blocked    | Dependency failed, cannot execute            | (terminal)         | Upstream dependency in failed state          |
+
+### State Transition Rules
+
+1. **Epic Initialization:**
+   - Start: initializing
+   - Success → ready_to_execute (all tickets pending, dependency graph built)
+   - Failure → failed (cannot create epic branch or artifacts directory)
+
+2. **Wave Execution:**
+   - ready_to_execute → executing_wave (spawn sub-agents for ready tickets)
+   - executing_wave → ready_to_execute (at least one sub-agent completed)
+   - executing_wave → completed (all tickets in terminal state, all critical
+     tickets completed)
+   - executing_wave → failed (critical ticket failed with
+     rollback_on_failure=true)
+
+3. **Error Recovery:**
+   - failed → rolled_back (execute_rollback completes, epic/ticket branches
+     deleted)
+   - failed → partial_success (critical failure with rollback_on_failure=false)
+
+4. **Ticket Transitions:**
+   - pending → queued (all depends_on tickets in completed state)
+   - pending → blocked (any depends_on ticket in failed state)
+   - queued → executing (spawn sub-agent successfully)
+   - executing → validating (sub-agent returns completion report)
+   - validating → completed (validate_completion_report passes)
+   - validating → failed (validation fails: branch not found, tests failing,
+     etc.)
+
+### State Update Protocol
+
+**When to Update epic-state.json:**
+
+- Before spawning sub-agent: ticket.status = queued → executing
+- After sub-agent returns: ticket.status = executing → validating
+- After validation: ticket.status = validating → completed/failed
+- After epic state change: epic.status updates with timestamp
+
+**Consistency Requirements:**
+
+- Use atomic write (temp file + rename) for all state updates
+- Include timestamps for all state changes (started_at, completed_at)
+- Validate JSON schema before writing
+- Never update state while reading (read-modify-write pattern)
+
+### Crash Recovery
+
+If orchestrator crashes:
+
+1. Read epic-state.json to determine current state
+2. Tickets in 'executing' state are stale (sub-agent lost)
+3. Reset stale tickets to queued if dependencies still met, otherwise pending
+4. Resume from ready_to_execute state, recalculate ready tickets
+5. Epic-state.json is single source of truth for restart
+
+### State Machine Examples
+
+**Example 1: Normal Execution (3 Independent Tickets)**
+
+```
+Epic State Flow:
+initializing → ready_to_execute → executing_wave → ready_to_execute → completed
+
+Ticket States (A, B, C have no dependencies):
+  Wave 1: A, B, C: pending → queued → executing
+  Wave 2: A: validating → completed, B, C: still executing
+  Wave 3: B: validating → completed, C: still executing
+  Wave 4: C: validating → completed
+  Epic: ready_to_execute → completed
+```
+
+**Example 2: Diamond Dependency Graph**
+
+```
+Dependency Structure: A → B, A → C, B → D, C → D
+
+Ticket States:
+  Wave 1: A: pending → queued → executing → validating → completed
+  Wave 2: B, C: pending → queued → executing (parallel execution)
+  Wave 3: B: validating → completed, C: validating → completed
+  Wave 4: D: pending → queued → executing → validating → completed
+  Epic: initializing → ready_to_execute → executing_wave → completed
+```
+
+**Example 3: Critical Ticket Failure with Rollback**
+
+```
+Epic State Flow:
+initializing → ready_to_execute → executing_wave → failed → rolled_back
+
+Ticket States (A is critical, B depends on A):
+  Wave 1: A: pending → queued → executing → validating → failed
+  Epic: executing_wave → failed (critical ticket failed, rollback_on_failure=true)
+  Wave 2: B: pending → blocked (dependency failed)
+  Rollback: Delete epic/[name] branch, delete ticket/A branch
+  Epic: failed → rolled_back
+```
+
+**Example 4: Non-Critical Failure with Partial Success**
+
+```
+Epic State Flow:
+initializing → ready_to_execute → executing_wave → completed
+
+Ticket States (A is non-critical, B depends on A, C is independent and critical):
+  Wave 1: A: pending → queued → executing → validating → failed
+  Wave 2: B: pending → blocked (dependency failed)
+          C: pending → queued → executing → validating → completed
+  Epic: All tickets terminal, critical tickets completed → completed
+  Result: partial_success (some non-critical work failed but epic succeeded)
+```
+
+**Example 5: Orchestrator Crash and Recovery**
+
+```
+Before Crash:
+  Epic: executing_wave
+  A: completed, B: executing, C: executing, D: pending (depends on B, C)
+
+After Crash (restart from epic-state.json):
+  1. Read epic-state.json
+  2. Detect B, C in 'executing' state (stale)
+  3. Reset B, C to queued (dependencies still met)
+  4. Resume: epic.status = ready_to_execute
+  5. Recalculate ready tickets: B, C are ready
+  6. Spawn B, C sub-agents again
+  7. Continue normal execution
+```
+
 ## Epic State File Structure
 
 The orchestrator creates an `artifacts/` directory alongside the epic file and
