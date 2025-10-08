@@ -59,17 +59,27 @@ You are creating individual tickets from an epic file. Your task is to:
    - Understand the template structure and placeholder sections
 
 2. Read and parse the epic file at: [epic-file-path]
-   - Extract the YAML frontmatter block
+   - Detect epic format (auto-detect based on fields present):
+     * Format A: Has "epic:" field (from create-epic command)
+     * Format B: Has "name:" field (manually created)
+   - Extract YAML configuration
    - Parse epic metadata, acceptance criteria, and ticket definitions
    - Extract epic summary, architecture, and goals for context
+   - Adapt field names based on detected format:
+     * Epic title: "epic" field OR "name" field
+     * Ticket ID: "id" field OR "name" field
+     * Dependencies: "depends_on" field OR "dependencies" field
+     * Objectives: "acceptance_criteria" OR "objectives"
 
 3. For each ticket defined in the epic configuration:
-   - Create a new markdown file at the path specified in the epic
+   - Create a new markdown file at the path specified in the ticket
+     * Use "path" field if present in ticket definition
+     * Otherwise generate path as: tickets/[ticket-id].md
    - Use the loaded ticket template as the base structure
    - Replace ALL template placeholders with specific, contextual information
    - Populate with epic context and ticket-specific information
-   - Include proper dependency references
-   - Use descriptive ticket IDs that work as git branch names (lowercase, hyphen-separated, e.g., "add-user-authentication", "refactor-api-endpoints")
+   - Include proper dependency references from depends_on OR dependencies field
+   - Use ticket ID from "id" OR "name" field (must be git-branch-friendly)
 
 4. Template population process using planning-ticket-template.md:
 
@@ -147,23 +157,28 @@ IMPORTANT:
 - No placeholder should remain unreplaced ([COMPONENT], [language], xtest, etc.)
 - Every ticket must include full epic context
 - Tickets should be self-contained but epic-aware
-- Dependencies must exactly match the epic configuration
-- Use epic architecture to inform all technical decisions
+- Dependencies must exactly match the epic configuration (depends_on OR dependencies field)
+- Use epic architecture/context/objectives to inform all technical decisions
 - Ensure consistency across all generated tickets
 - Create tickets that execute-ticket can successfully implement
+- CRITICAL: Auto-detect epic format and adapt:
+  * Format A (create-epic): Use "id", "depends_on", "epic", "coordination_requirements"
+  * Format B (manual): Use "name", "dependencies", "name", "context"+"objectives"+"constraints"
+  * Tickets inherit from whichever format the epic uses
 - CRITICAL: Ticket IDs must be descriptive and git-branch-friendly:
   * Use lowercase with hyphens (kebab-case)
   * Be descriptive of the work (e.g., "add-user-authentication", not "ticket-1")
   * Suitable for use as git branch names
   * Avoid generic names like "task-1", "feature-2", etc.
-- CRITICAL: Use real project specifics:
-  * Actual framework names (pytest, not "test_framework")
-  * Actual commands ("uv run pytest", not "run tests")
-  * Actual module names (myproject.auth, not [module])
-  * Actual file paths and project structure
-  * Specific languages (python, typescript, not [language])
+- CRITICAL: Use real project specifics from epic:
+  * Actual framework names from epic (pytest, not "test_framework")
+  * Actual commands from epic or infer from project ("uv run pytest", not "run tests")
+  * Actual module names from files_to_modify (myproject.auth, not [module])
+  * Actual file paths from epic files_to_modify field
+  * Specific languages from project structure (python, typescript, not [language])
   * Real test names and commands, no xtest patterns
-  * Specific component/module names relevant to the epic
+  * Specific component/module names from epic context
+  * Extract technical details from acceptance_criteria field
 ```
 
 ## Example Output
