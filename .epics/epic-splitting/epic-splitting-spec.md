@@ -66,9 +66,10 @@ When ticket count >= 13, invoke specialist agent:
    - Example: 4 tickets that deliver "token caching use cases" 
    - NOT: arbitrary splits like "part1" and "part2"
    
-3. Create multiple standalone epic YAML files:
-   - `token-caching.epic.yaml` (complete deliverable)
-   - `token-caching-integration.epic.yaml` (complete deliverable)
+3. Create subdirectories for each split epic:
+   - `token-caching/token-caching.epic.yaml` (complete deliverable)
+   - `token-caching-integration/token-caching-integration.epic.yaml` (complete deliverable)
+   - Each epic gets its own directory with tickets/ subdirectory
    - Each epic has a clear deliverable purpose
    
 4. **No epic hierarchies, no orchestrator epics** - Each split epic is independent
@@ -89,15 +90,25 @@ When ticket count >= 13, invoke specialist agent:
 
 ### File Structure
 
+When splitting, create subdirectories for each split epic:
+
 ```
 .epics/user-auth/
 ├── user-auth-spec.md              # Original spec
-├── user-auth.epic.yaml            # Original oversized epic (25 tickets) - archived
-├── token-caching.epic.yaml        # Deliverable 1: Token caching (10 tickets)
-└── token-caching-integration.epic.yaml  # Deliverable 2: Token caching use cases (4 tickets)
+├── user-auth.epic.yaml.original   # Original oversized epic (archived)
+├── token-caching/
+│   ├── token-caching.epic.yaml    # Deliverable 1: Token caching (10 tickets)
+│   └── tickets/                   # Ticket files for this epic
+└── token-caching-integration/
+    ├── token-caching-integration.epic.yaml  # Deliverable 2: Integration (4 tickets)
+    └── tickets/                   # Ticket files for this epic
 ```
 
-**No hierarchy, no orchestrator epic** - Each split epic is a standalone deliverable.
+**Benefits:**
+- Clean organization - each split epic has its own directory
+- Ticket files are scoped to their epic
+- Original spec and archived epic remain at top level
+- No hierarchy - each subdirectory is independent
 
 ### Epic YAML Format Updates
 
@@ -120,6 +131,8 @@ tickets: [...]
    - After epic creation succeeds
    - Parse YAML to get `ticket_count`
    - If >= 13, invoke split workflow
+   - Create subdirectories for each split epic
+   - Move/archive original epic
    - Display split results
 
 2. **cli/core/prompts.py**:
@@ -154,13 +167,13 @@ Buildspec invokes specialist agent via Claude subprocess
   ↓
 Specialist reads original epic, identifies independent deliverables
   ↓
-Creates: token-caching.epic.yaml (10 tickets) 
-         token-caching-integration.epic.yaml (4 tickets)
+Creates: token-caching/token-caching.epic.yaml (10 tickets) 
+         token-caching-integration/token-caching-integration.epic.yaml (4 tickets)
 Archives: my-epic.epic.yaml → my-epic.epic.yaml.original
   ↓
 Display: "Epic split into 2 independent deliverables (25 → 14 tickets)"
-         "Created: token-caching.epic.yaml (10 tickets)"
-         "Created: token-caching-integration.epic.yaml (4 tickets)"
+         "Created: token-caching/token-caching.epic.yaml (10 tickets)"
+         "Created: token-caching-integration/token-caching-integration.epic.yaml (4 tickets)"
          "Original epic archived as: my-epic.epic.yaml.original"
          "Execute each epic independently - no dependencies between them"
 ```
