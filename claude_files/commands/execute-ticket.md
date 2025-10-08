@@ -234,3 +234,283 @@ The command will handle common issues:
 - `/create-ticket`: Create a new ticket from template
 - `/validate-ticket`: Check if a ticket is properly formatted
 - `/estimate-ticket`: Get effort estimation for a ticket
+
+## Completion Reporting
+
+### TicketCompletionReport Format
+
+**IMPORTANT:** When you complete ticket execution, you MUST return a standardized TicketCompletionReport in JSON format.
+
+The orchestrator validates this report before marking the ticket complete. All required fields must be present and accurate.
+
+### Required Fields
+
+**ticket_id** (string)
+
+- The ticket identifier matching the ticket markdown filename
+- Example: "add-user-authentication"
+
+**status** (enum: "completed" | "failed" | "blocked")
+
+- "completed": Ticket work finished successfully
+- "failed": Execution failed with errors
+- "blocked": Cannot execute due to missing dependency
+
+**branch_name** (string)
+
+- Git branch you created for this ticket
+- Format: "ticket/{ticket-id}"
+- Example: "ticket/add-user-authentication"
+
+**base_commit** (string)
+
+- Git SHA you branched from (provided by orchestrator)
+- Example: "abc123def456789..."
+
+**final_commit** (string | null)
+
+- Git SHA of your final commit on the ticket branch
+- Use `git rev-parse HEAD` after completing work
+- null if status="failed" or "blocked"
+
+**files_modified** (list of strings)
+
+- List of file paths you created or modified
+- Use absolute paths from repository root
+- Example: ["/Users/kit/Code/buildspec/cli/auth.py", "/Users/kit/Code/buildspec/tests/test_auth.py"]
+
+**test_suite_status** (enum: "passing" | "failing" | "skipped")
+
+- "passing": All tests passed
+- "failing": Some tests failed
+- "skipped": Tests were not run (document why in warnings)
+
+**acceptance_criteria** (list of objects)
+
+- List of acceptance criteria with met status
+- Each object: `{"criterion": "Description", "met": true/false}`
+- Extract criteria from ticket markdown's "Acceptance Criteria" section
+- Mark each criterion as met or not met based on your work
+
+### Optional Fields
+
+**failure_reason** (string | null)
+
+- Required if status="failed"
+- Describe what went wrong
+- Include error messages, stack traces, or failure details
+
+**blocking_dependency** (string | null)
+
+- Required if status="blocked"
+- Ticket ID of the dependency you're blocked on
+- Example: "add-authentication-base"
+
+**warnings** (list of strings)
+
+- Non-fatal issues encountered during execution
+- Examples: deprecation warnings, skipped tests, partial implementations
+- Empty list if no warnings
+
+**artifacts** (null)
+
+- Reserved for future distributed execution support
+- Always set to null
+
+### Example Reports
+
+**Example 1: Successful Completion**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "completed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456789",
+  "final_commit": "789ghi012jkl345",
+  "files_modified": [
+    "/Users/kit/Code/buildspec/cli/auth.py",
+    "/Users/kit/Code/buildspec/cli/models/user.py",
+    "/Users/kit/Code/buildspec/tests/unit/test_auth.py"
+  ],
+  "test_suite_status": "passing",
+  "acceptance_criteria": [
+    { "criterion": "User can authenticate with password", "met": true },
+    { "criterion": "Invalid credentials are rejected", "met": true },
+    { "criterion": "Session tokens are generated correctly", "met": true },
+    { "criterion": "Token expiration is enforced", "met": true }
+  ],
+  "warnings": []
+}
+```
+
+**Example 2: Failed Execution**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "failed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456789",
+  "final_commit": null,
+  "files_modified": ["/Users/kit/Code/buildspec/cli/auth.py"],
+  "test_suite_status": "failing",
+  "acceptance_criteria": [],
+  "failure_reason": "Test suite failed: test_password_validation failed with AssertionError: Expected password hashing to use bcrypt, but got plaintext storage. Stack trace:\n  File test_auth.py, line 45, in test_password_validation\n    assert user.password.startswith('$2b$')",
+  "warnings": [
+    "bcrypt library not found in dependencies",
+    "Partial implementation completed before test failure"
+  ]
+}
+```
+
+**Example 3: Blocked by Dependency**
+
+```json
+{
+  "ticket_id": "add-user-sessions",
+  "status": "blocked",
+  "branch_name": "ticket/add-user-sessions",
+  "base_commit": "abc123def456789",
+  "final_commit": null,
+  "files_modified": [],
+  "test_suite_status": "skipped",
+  "acceptance_criteria": [],
+  "blocking_dependency": "add-user-authentication",
+  "failure_reason": "Cannot implement sessions without authentication base. The add-user-authentication ticket has not been completed, and sessions require auth infrastructure.",
+  "warnings": []
+}
+```
+
+### Validation Expectations
+
+The orchestrator will validate your completion report:
+
+**Git Verification:**
+
+- Verify `branch_name` exists: `git rev-parse --verify refs/heads/{branch_name}`
+- Verify `final_commit` exists: `git rev-parse --verify {final_commit}`
+- Verify commit is on branch: `git branch --contains {final_commit}`
+
+**Test Suite Validation:**
+
+- If `test_suite_status` is "failing", validation will fail
+- If "passing", validation proceeds
+- If "skipped", document reason in warnings
+
+**Acceptance Criteria Validation:**
+
+- Each criterion must have "criterion" (string) and "met" (boolean) fields
+- All criteria from ticket markdown should be included
+- Unmet criteria (met=false) are logged but don't fail validation
+
+**Field Validation:**
+
+- All required fields must be present
+- Field types must match specification
+- Enums must use exact values (case-sensitive)
+
+### Generating Acceptance Criteria List
+
+**Read ticket acceptance criteria:**
+
+```python
+# From ticket markdown "Acceptance Criteria" section
+acceptance_criteria = [
+    "User can authenticate with password",
+    "Invalid credentials are rejected",
+    "Session tokens are generated correctly",
+    "Token expiration is enforced"
+]
+```
+
+**Evaluate each criterion:**
+
+```python
+# For each criterion, determine if your work met it
+report_criteria = []
+for criterion in acceptance_criteria:
+    met = evaluate_criterion(criterion)  # Your implementation logic
+    report_criteria.append({
+        "criterion": criterion,
+        "met": met
+    })
+```
+
+**Include in completion report:**
+
+```python
+completion_report = {
+    # ... other fields
+    "acceptance_criteria": report_criteria
+}
+```
+
+### How to Generate final_commit
+
+After completing your work:
+
+```bash
+# Ensure you're on your ticket branch
+git checkout ticket/{ticket-id}
+
+# Commit your final changes
+git add .
+git commit -m "Complete {ticket-id}: {description}"
+
+# Get final commit SHA
+final_commit=$(git rev-parse HEAD)
+
+# Use in completion report
+echo "final_commit: $final_commit"
+```
+
+### Common Mistakes to Avoid
+
+**Missing required fields:**
+
+- Always include all 8 required fields
+- Use null for final_commit if status is not "completed"
+
+**Invalid status values:**
+
+- Use exact values: "completed", "failed", "blocked"
+- NOT: "complete", "success", "done"
+
+**Wrong branch name format:**
+
+- Use "ticket/{ticket-id}", not just "{ticket-id}"
+- Example: "ticket/add-auth" not "add-auth"
+
+**Empty acceptance_criteria:**
+
+- Always include criteria from ticket markdown
+- Mark each as met=true or met=false
+- Empty list only acceptable if status="failed" or "blocked"
+
+**Files_modified with relative paths:**
+
+- Use absolute paths from repository root
+- NOT: "../cli/auth.py"
+- YES: "/Users/kit/Code/buildspec/cli/auth.py"
+
+### Submitting Your Report
+
+Return your completion report as the final output of ticket execution:
+
+```json
+{
+  "ticket_id": "...",
+  "status": "...",
+  ...
+}
+```
+
+The orchestrator will:
+
+1. Parse your JSON report
+2. Validate all fields are present and correct
+3. Run git verification commands
+4. Check test suite status
+5. Record completion in epic-state.json
+6. Mark ticket as completed or failed based on validation
