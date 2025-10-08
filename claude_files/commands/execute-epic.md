@@ -185,6 +185,541 @@ After Crash (restart from epic-state.json):
   7. Continue normal execution
 ```
 
+## Sub-Agent Lifecycle Protocol
+
+The orchestrator spawns ticket-builder sub-agents via the Task tool and coordinates their execution through a standardized lifecycle protocol. This section defines the complete contract between orchestrator and sub-agents for spawn, monitor, and validate phases.
+
+### Phase 1: Spawn
+
+**Tool:** Task tool with subagent_type='general-purpose'
+
+**Prompt Construction:**
+
+The orchestrator constructs the sub-agent prompt by reading execute-ticket.md and injecting ticket-specific context:
+
+```python
+# Read execute-ticket.md template
+ticket_instructions = Path("/Users/kit/Code/buildspec/claude_files/commands/execute-ticket.md").read_text()
+
+# Inject context
+prompt = f"""
+{ticket_instructions}
+
+TICKET EXECUTION CONTEXT:
+- Ticket Path: {ticket.path}
+- Epic Path: {epic_path}
+- Base Commit: {base_commit_sha}
+- Session ID: {session_id}
+- Ticket ID: {ticket.id}
+
+Execute the ticket and return a TicketCompletionReport in JSON format.
+"""
+
+# Spawn sub-agent via Task tool
+handle = Task.spawn(
+    subagent_type='general-purpose',
+    prompt=prompt,
+    context={'ticket_id': ticket.id, 'epic_id': epic.id}
+)
+```
+
+**State Updates Before Spawn:**
+
+Before spawning a sub-agent, the orchestrator updates the ticket state:
+
+```python
+ticket.status = 'executing'
+ticket.started_at = datetime.now(UTC).isoformat()
+update_epic_state(state, {ticket.id: ticket})
+```
+
+**State Updates After Spawn:**
+
+After successfully spawning, the orchestrator records the sub-agent handle:
+
+```python
+# Track sub-agent handle for monitoring
+sub_agent_handles[ticket.id] = handle
+```
+
+**Error Handling:**
+
+If spawn fails, the ticket is marked as failed:
+
+```python
+try:
+    handle = Task.spawn(...)
+except SpawnError as e:
+    ticket.status = 'failed'
+    ticket.failure_reason = f'spawn_error: {str(e)}'
+    update_epic_state(state, {ticket.id: ticket})
+    logger.error(f"Failed to spawn sub-agent for {ticket.id}: {e}")
+```
+
+### Phase 2: Monitor
+
+**Strategy:** Passive monitoring (no polling)
+
+The orchestrator uses a passive monitoring approach that waits for Task tool completion rather than actively polling for progress.
+
+**The orchestrator does NOT:**
+
+- Poll git for new commits during execution
+- Read ticket files while sub-agent is working
+- Check process status continuously
+- Make any active checks during execution
+
+**The orchestrator DOES:**
+
+- Wait for Task tool to return (blocking or async)
+- Track multiple sub-agent futures simultaneously
+- Respond only when sub-agent completes and returns
+- Maintain state consistency through completion reports
+
+**Parallel Tracking:**
+
+The orchestrator tracks multiple sub-agents executing in parallel:
+
+```python
+# Spawn multiple sub-agents
+handles = []
+for ticket in ready_tickets[:available_slots]:
+    handle = spawn_ticket_sub_agent(ticket, base_commit, session_id)
+    handles.append((ticket.id, handle))
+
+# Wait for any completion
+completed_ticket_id, completion_report = wait_for_any(handles)
+```
+
+This allows the orchestrator to maximize parallelism while respecting concurrency limits (MAX_CONCURRENT_TICKETS).
+
+### Phase 3: Validate Completion Report
+
+When a sub-agent returns, the orchestrator validates the completion report before accepting the ticket as complete.
+
+**TicketCompletionReport Schema:**
+
+The completion report must follow this exact structure:
+
+**Required Fields:**
+
+- `ticket_id` (string): Ticket identifier matching ticket file
+- `status` (enum): 'completed' | 'failed' | 'blocked'
+- `branch_name` (string): Git branch created (e.g., 'ticket/add-user-auth')
+- `base_commit` (string): SHA ticket was branched from
+- `final_commit` (string | null): SHA of final commit (null if failed)
+- `files_modified` (list[string]): File paths changed during execution
+- `test_suite_status` (enum): 'passing' | 'failing' | 'skipped'
+- `acceptance_criteria` (list[object]): [{criterion: string, met: boolean}, ...]
+
+**Optional Fields:**
+
+- `failure_reason` (string | null): Description if status='failed'
+- `blocking_dependency` (string | null): Ticket ID if status='blocked'
+- `warnings` (list[string]): Non-fatal issues encountered
+
+**Example - Success:**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "completed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456",
+  "final_commit": "789ghi012jkl",
+  "files_modified": [
+    "/Users/kit/Code/buildspec/cli/auth.py",
+    "/Users/kit/Code/buildspec/tests/test_auth.py"
+  ],
+  "test_suite_status": "passing",
+  "acceptance_criteria": [
+    { "criterion": "User can authenticate with password", "met": true },
+    { "criterion": "Invalid credentials rejected", "met": true },
+    { "criterion": "Session tokens generated", "met": true }
+  ],
+  "warnings": []
+}
+```
+
+**Example - Failure:**
+
+```json
+{
+  "ticket_id": "add-user-authentication",
+  "status": "failed",
+  "branch_name": "ticket/add-user-authentication",
+  "base_commit": "abc123def456",
+  "final_commit": null,
+  "files_modified": [],
+  "test_suite_status": "failing",
+  "acceptance_criteria": [],
+  "failure_reason": "Test suite failed: test_password_validation failed with assertion error",
+  "warnings": ["Could not import bcrypt library"]
+}
+```
+
+**Example - Blocked:**
+
+```json
+{
+  "ticket_id": "add-user-sessions",
+  "status": "blocked",
+  "branch_name": "ticket/add-user-sessions",
+  "base_commit": "abc123def456",
+  "final_commit": null,
+  "files_modified": [],
+  "test_suite_status": "skipped",
+  "acceptance_criteria": [],
+  "blocking_dependency": "add-user-authentication",
+  "failure_reason": "Cannot implement sessions without authentication base"
+}
+```
+
+### Validation Checks
+
+The orchestrator performs the following validation checks on the completion report:
+
+**Git Verification:**
+
+```bash
+# 1. Verify branch exists
+git rev-parse --verify refs/heads/$branch_name
+
+# 2. Verify final commit exists (if status=completed)
+git rev-parse --verify $final_commit
+
+# 3. Verify commit is on branch
+git branch --contains $final_commit | grep $branch_name
+```
+
+**Test Suite Validation:**
+
+- If test_suite_status='failing', validation fails (ticket.status='failed')
+- If test_suite_status='skipped', accept (ticket may skip tests intentionally)
+- If test_suite_status='passing', validation passes
+
+**Acceptance Criteria Validation:**
+
+- Check acceptance_criteria is list of objects with 'criterion' and 'met' fields
+- Verify all criteria have boolean 'met' status
+- Log any criteria with met=false for reporting
+
+**State Update After Validation:**
+
+```python
+# Validation passed
+if validation_result.passed:
+    ticket.status = 'completed'
+    ticket.completed_at = datetime.now(UTC).isoformat()
+    ticket.git_info = {
+        'branch_name': report['branch_name'],
+        'base_commit': report['base_commit'],
+        'final_commit': report['final_commit']
+    }
+    update_epic_state(state, {ticket.id: ticket})
+
+# Validation failed
+else:
+    ticket.status = 'failed'
+    ticket.failure_reason = f'validation_failed: {validation_result.error}'
+    update_epic_state(state, {ticket.id: ticket})
+```
+
+## Error Recovery Workflows
+
+### Critical Ticket Failure
+
+**Detection:** Ticket with `critical: true` transitions to `status: 'failed'`
+
+**Workflow:**
+
+```python
+def handle_critical_ticket_failure(epic_state: EpicState, failed_ticket: Ticket):
+    """
+    Handle critical ticket failure based on rollback_on_failure setting.
+    """
+    logger.error(f"Critical ticket {failed_ticket.id} failed: {failed_ticket.failure_reason}")
+
+    if epic_state.rollback_on_failure:
+        # Rollback workflow
+        logger.warning("rollback_on_failure=true. Initiating rollback...")
+
+        # Stop spawning new tickets
+        epic_state.status = 'failed'
+        epic_state.failure_reason = f'critical_ticket_failed: {failed_ticket.id}'
+        update_epic_state(epic_state, {})
+
+        # Wait for currently executing tickets to complete
+        wait_for_all_executing_tickets()
+
+        # Execute rollback
+        execute_rollback(epic_state)
+
+    else:
+        # Partial success workflow
+        logger.warning("rollback_on_failure=false. Continuing with partial success...")
+
+        # Mark dependent tickets as blocked
+        mark_dependent_tickets_blocked(epic_state, failed_ticket.id)
+
+        # Epic can continue with independent tickets
+        epic_state.status = 'partial_success'
+        epic_state.failure_reason = f'critical_ticket_failed_no_rollback: {failed_ticket.id}'
+        update_epic_state(epic_state, {})
+
+        # Continue wave execution with remaining tickets
+```
+
+### Non-Critical Ticket Failure
+
+**Detection:** Ticket with `critical: false` transitions to `status: 'failed'`
+
+**Workflow:**
+
+```python
+def handle_non_critical_ticket_failure(epic_state: EpicState, failed_ticket: Ticket):
+    """
+    Handle non-critical ticket failure.
+
+    Non-critical failures don't trigger rollback, but dependent tickets
+    are marked as blocked.
+    """
+    logger.warning(f"Non-critical ticket {failed_ticket.id} failed: {failed_ticket.failure_reason}")
+
+    # Mark dependent tickets as blocked
+    mark_dependent_tickets_blocked(epic_state, failed_ticket.id)
+
+    # Epic continues - can still reach 'completed' if all critical tickets succeed
+    # No epic status change needed
+```
+
+### Mark Dependent Tickets Blocked
+
+**Purpose:** Mark tickets that depend on failed ticket as blocked.
+
+**Implementation:**
+
+```python
+def mark_dependent_tickets_blocked(epic_state: EpicState, failed_ticket_id: str):
+    """
+    Mark all tickets that depend on failed ticket as blocked.
+    """
+    for ticket_id, ticket_state in epic_state.tickets.items():
+        # Check if this ticket depends on the failed ticket
+        if failed_ticket_id in ticket_state.depends_on:
+            # Only block if not already in terminal state
+            if ticket_state.status not in ['completed', 'failed', 'blocked']:
+                ticket_state.status = 'blocked'
+                ticket_state.blocking_dependency = failed_ticket_id
+                ticket_state.failure_reason = f'dependency_failed: {failed_ticket_id}'
+                update_epic_state(epic_state, {ticket_id: ticket_state})
+                logger.warning(f"Ticket {ticket_id} blocked due to failed dependency {failed_ticket_id}")
+```
+
+### execute_rollback() Function
+
+**Purpose:** Delete epic and ticket branches, record rollback details.
+
+**Implementation:**
+
+```python
+def execute_rollback(epic_state: EpicState):
+    """
+    Roll back epic execution by deleting branches and recording rollback.
+    """
+    logger.warning(f"Rolling back epic {epic_state.epic_id}...")
+
+    # 1. Delete epic branch
+    result = subprocess.run(
+        ['git', 'branch', '-D', epic_state.epic_branch],
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        logger.error(f"Failed to delete epic branch: {result.stderr}")
+    else:
+        logger.info(f"Deleted epic branch: {epic_state.epic_branch}")
+
+    # 2. Delete all ticket branches for this epic
+    for ticket_id, ticket_state in epic_state.tickets.items():
+        if ticket_state.git_info and ticket_state.git_info.get('branch_name'):
+            branch_name = ticket_state.git_info['branch_name']
+            result = subprocess.run(
+                ['git', 'branch', '-D', branch_name],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                logger.warning(f"Failed to delete ticket branch {branch_name}: {result.stderr}")
+            else:
+                logger.info(f"Deleted ticket branch: {branch_name}")
+
+    # 3. Record rollback in state
+    epic_state.status = 'rolled_back'
+    epic_state.completed_at = datetime.now(UTC).isoformat()
+
+    # List completed tickets for rollback report
+    completed_tickets = [
+        ticket_id for ticket_id, ticket_state in epic_state.tickets.items()
+        if ticket_state.status == 'completed'
+    ]
+
+    if completed_tickets:
+        logger.info(f"Rollback discarded work from completed tickets: {completed_tickets}")
+
+    update_epic_state(epic_state, {})
+
+    # 4. Generate rollback report
+    generate_rollback_report(epic_state, completed_tickets)
+
+    logger.warning("Rollback complete. Epic branch and ticket branches deleted.")
+```
+
+### Orchestrator Crash Recovery
+
+**Scenario:** Orchestrator process crashes or is interrupted during execution.
+
+**Recovery Procedure:**
+
+```python
+def recover_from_crash(epic_path: str) -> EpicState:
+    """
+    Recover epic execution after orchestrator crash.
+
+    Reads epic-state.json and resets stale 'executing' tickets.
+    """
+    logger.info("Attempting crash recovery...")
+
+    # 1. Read epic-state.json
+    state_file = Path(epic_path).parent / 'artifacts' / 'epic-state.json'
+    if not state_file.exists():
+        raise RuntimeError("Cannot recover: epic-state.json not found")
+
+    epic_state = json.loads(state_file.read_text())
+
+    # 2. Identify stale tickets (in 'executing' state)
+    stale_tickets = [
+        ticket_id for ticket_id, ticket_state in epic_state.tickets.items()
+        if ticket_state.status == 'executing'
+    ]
+
+    if stale_tickets:
+        logger.warning(f"Found {len(stale_tickets)} stale tickets: {stale_tickets}")
+
+    # 3. Reset stale tickets to queued or pending
+    for ticket_id in stale_tickets:
+        ticket_state = epic_state.tickets[ticket_id]
+
+        # Check if dependencies are still met
+        deps_met = all(
+            epic_state.tickets[dep_id].status == 'completed'
+            for dep_id in ticket_state.depends_on
+        )
+
+        if deps_met:
+            # Dependencies met → queued
+            ticket_state.status = 'queued'
+            logger.info(f"Reset {ticket_id} from executing → queued")
+        else:
+            # Dependencies not met → pending
+            ticket_state.status = 'pending'
+            logger.info(f"Reset {ticket_id} from executing → pending")
+
+        # Clear started_at timestamp
+        ticket_state.started_at = None
+
+    # 4. Reset epic to ready_to_execute
+    if epic_state.status == 'executing_wave':
+        epic_state.status = 'ready_to_execute'
+        logger.info("Reset epic status from executing_wave → ready_to_execute")
+
+    # 5. Save recovered state
+    update_epic_state(epic_state, {})
+
+    logger.info("Crash recovery complete. Resuming epic execution...")
+    return epic_state
+```
+
+### Sub-Agent Spawn Retry Logic
+
+**Purpose:** Retry sub-agent spawning on transient failures.
+
+**Implementation:**
+
+```python
+def spawn_ticket_sub_agent_with_retry(
+    ticket: Ticket,
+    base_commit: str,
+    session_id: str,
+    max_retries: int = 2
+) -> SubAgentHandle:
+    """
+    Spawn sub-agent with exponential backoff retry.
+
+    Args:
+        max_retries: Maximum number of retry attempts (default: 2)
+                    Total attempts = max_retries + 1 (initial try)
+
+    Returns:
+        SubAgentHandle if spawn succeeds
+
+    Raises:
+        SpawnFailedError if all retries exhausted
+    """
+    backoff_delays = [5, 15]  # seconds
+
+    for attempt in range(max_retries + 1):
+        try:
+            # Attempt spawn
+            handle = spawn_ticket_sub_agent(ticket, base_commit, session_id)
+            logger.info(f"Spawned sub-agent for {ticket.id} (attempt {attempt + 1})")
+            return handle
+
+        except SpawnError as e:
+            if attempt < max_retries:
+                # Retry with backoff
+                delay = backoff_delays[attempt]
+                logger.warning(f"Spawn failed for {ticket.id} (attempt {attempt + 1}): {e}. Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                # Max retries exhausted
+                logger.error(f"Spawn failed for {ticket.id} after {max_retries + 1} attempts: {e}")
+                ticket.status = 'failed'
+                ticket.failure_reason = f'spawn_failed_after_retries: {str(e)}'
+                update_epic_state(epic_state, {ticket.id: ticket})
+                raise SpawnFailedError(f"Failed to spawn {ticket.id} after {max_retries + 1} attempts") from e
+```
+
+### Error Recovery Examples
+
+**Example 1: Critical Failure with Rollback**
+
+- Epic with 5 tickets (all critical), rollback_on_failure=true
+- Tickets A, B complete successfully
+- Ticket C fails (critical)
+- Orchestrator stops spawning D, E
+- Waits for any executing tickets to complete
+- Calls execute_rollback() → deletes epic branch and all ticket branches
+- Epic status = 'rolled_back'
+
+**Example 2: Non-Critical Failure, Partial Success**
+
+- Epic with 5 tickets (C is non-critical), rollback_on_failure=false
+- Tickets A, B complete successfully
+- Ticket C fails (non-critical)
+- Ticket D depends on C → marked 'blocked'
+- Ticket E is independent → continues executing and completes
+- Epic status = 'partial_success' (4 completed, 1 failed, 1 blocked)
+
+**Example 3: Orchestrator Crash Recovery**
+
+- Epic execution in progress: A, B completed; C, D executing
+- Orchestrator crashes
+- On restart: Read epic-state.json
+- C, D are in 'executing' state but sub-agents lost
+- Reset C, D to 'queued' (dependencies A, B completed)
+- Resume wave execution from ready_to_execute state
+
 ## Epic State File Structure
 
 The orchestrator creates an `artifacts/` directory alongside the epic file and
