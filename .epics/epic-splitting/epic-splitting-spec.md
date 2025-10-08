@@ -18,10 +18,10 @@ Currently, there's no mechanism to handle oversized epics - they either fail or 
 
 1. Allow epic creation to produce unconstrained, high-quality epics
 2. Automatically detect when an epic needs splitting (>12 tickets)
-3. Use a specialist agent to intelligently split oversized epics
+3. Use a specialist agent to intelligently split oversized epics into independent deliverables
 4. Preserve all context and quality from the original epic
-5. Maintain ticket dependencies across split epics
-6. Support execution of coordinated multi-epic workflows
+5. Ensure each split epic is fully independent and deployable
+6. Preserve ticket dependencies within each epic (no cross-epic dependencies)
 
 ## Non-Goals
 
@@ -73,9 +73,10 @@ When ticket count >= 13, invoke specialist agent:
    
 4. **No epic hierarchies, no orchestrator epics** - Each split epic is independent
    
-5. Preserve ticket dependencies **within each epic**:
-   - Dependencies that span epics become ordering constraints
-   - Document execution order in split summary
+5. Ensure full independence:
+   - Each epic is fully deployable on its own
+   - No cross-epic dependencies - tickets that depend on each other stay in same epic
+   - If tickets must be split across epics, they cannot have dependencies
 
 **Output:**
 - Multiple epic files in same directory, each named for its deliverable
@@ -141,7 +142,7 @@ tickets: [...]
 ```
 User: buildspec create-epic spec.md
   ↓
-Root Claude creates epic (unconstrained, high quality)
+Claude creates epic (unconstrained, high quality)
   ↓
 Epic file created: my-epic.epic.yaml
   ↓
@@ -149,17 +150,19 @@ Python: Parse YAML, check ticket_count
   ↓
 ticket_count = 25 (>= 13) → Trigger split
   ↓
-Root Claude spawns specialist agent
+Buildspec invokes specialist agent via Claude subprocess
   ↓
-Specialist reads original epic, proposes split
+Specialist reads original epic, identifies independent deliverables
   ↓
 Creates: token-caching.epic.yaml (10 tickets) 
          token-caching-integration.epic.yaml (4 tickets)
+Archives: my-epic.epic.yaml → my-epic.epic.yaml.original
   ↓
 Display: "Epic split into 2 independent deliverables (25 → 14 tickets)"
          "Created: token-caching.epic.yaml (10 tickets)"
          "Created: token-caching-integration.epic.yaml (4 tickets)"
-         "Execute each independently as needed"
+         "Original epic archived as: my-epic.epic.yaml.original"
+         "Execute each epic independently - no dependencies between them"
 ```
 
 ## Ticket Count Thresholds
@@ -211,17 +214,19 @@ The specialist agent should identify deliverables by asking:
 
 ### Grouping Heuristics (in priority order)
 
-1. **Feature boundaries** - Complete capabilities (auth, caching, validation)
-2. **Dependency chains** - Keep dependent tickets together when possible
-3. **Architecture layers** - Infrastructure → Features → Integration (if they're distinct deliverables)
-4. **Ticket count limits** - 8-12 tickets per epic (soft), 15 max (hard)
+1. **Full independence** - Each epic must be deployable without any other epic
+2. **Dependency chains** - Keep ALL dependent tickets in the same epic (cannot split dependencies)
+3. **Feature boundaries** - Complete capabilities (auth, caching, validation)
+4. **Architecture layers** - Infrastructure → Features → Integration (only if fully independent)
+5. **Ticket count limits** - 8-12 tickets per epic (soft), 15 max (hard)
 
 ## Edge Cases
 
-1. **Circular dependencies across split** - Keep in same epic
-2. **Too many tickets to split reasonably** - Create 3+ epics
-3. **Single dependency chain** - Split by phases within chain
-4. **User specifies --no-split flag** - Skip splitting, warn about size
+1. **Circular dependencies** - Keep all tickets with circular deps in same epic
+2. **Long dependency chain** - Cannot split - keep entire chain in one epic
+3. **Too many tickets to split** - Create 3+ independent epics, each fully standalone
+4. **Cannot achieve independence** - Fail split, warn user epic is too coupled to split
+5. **User specifies --no-split flag** - Skip splitting, warn about size
 
 ## Success Criteria
 
@@ -229,9 +234,11 @@ The specialist agent should identify deliverables by asking:
 2. Oversized epics (>=13 tickets) are automatically detected
 3. Split epics maintain all context and quality
 4. Split epics are <= 12 tickets (soft) or <= 15 tickets (hard)
-5. Dependencies are preserved within and across epics
-6. No manual intervention required
-7. Clear feedback about split results
+5. **Each split epic is fully independent** - no cross-epic dependencies
+6. Dependencies are preserved within each epic only
+7. No manual intervention required
+8. Clear feedback about split results
+9. Original epic is archived for reference
 
 ## Future Enhancements
 
@@ -242,14 +249,17 @@ The specialist agent should identify deliverables by asking:
 ## Testing Strategy
 
 1. Create epic with exactly 12 tickets - should NOT split
-2. Create epic with 13 tickets - should split
-3. Create epic with 25 tickets - should split into 2 epics
-4. Create epic with 40 tickets - should split into 3+ epics
-5. Verify dependencies preserved across split
-6. Verify ticket quality maintained after split
+2. Create epic with 13 independent tickets - should split into 2 independent epics
+3. Create epic with 25 independent tickets - should split into 2-3 independent epics
+4. Create epic with 20 tickets in dependency chain - should NOT split (cannot break dependencies)
+5. Create epic with 40 tickets - should split into 3+ independent epics
+6. Verify each split epic is fully independent (no cross-epic dependencies)
+7. Verify dependencies preserved within each epic
+8. Verify ticket quality maintained after split
+9. Verify original epic is archived
 
 ## Related Work
 
 - High-quality ticket definition (to be added to epic creation)
-- Epic orchestration for multi-epic workflows
-- Dependency visualization across epics
+- Code review agent for quality scoring and improvement cycles
+- Dependency visualization within epics
