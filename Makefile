@@ -65,7 +65,7 @@ build:
 	@echo "✅ Symlink updated: ~/.local/bin/buildspec -> dist/$$(cat dist/.latest)"
 	@echo ""
 
-install-binary: build
+install-binary: build install
 	@echo "Installing standalone binary..."
 	@echo ""
 	@if [ ! -f dist/.latest ]; then \
@@ -77,8 +77,6 @@ install-binary: build
 	rm -f "$${HOME}/.local/bin/buildspec"; \
 	ln -s "$(PWD)/dist/$${BINARY_NAME}" "$${HOME}/.local/bin/buildspec"; \
 	echo "✅ Symlink created: $${HOME}/.local/bin/buildspec -> $(PWD)/dist/$${BINARY_NAME}"
-	@echo ""
-	@./scripts/install.sh
 	@echo ""
 	@echo "✅ Installation complete!"
 	@echo ""
