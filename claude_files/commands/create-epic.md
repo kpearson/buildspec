@@ -83,6 +83,14 @@ Main Claude will provide these exact instructions to the Task agent:
 ````
 You are generating an executable epic from a planning/specification document. Your PRIMARY GOAL is to extract only the coordination essentials needed for ticket execution while filtering out implementation speculation and planning noise.
 
+**CRITICAL: READ TICKET STANDARDS FIRST**
+
+Before analyzing the planning document, read and internalize the ticket quality standards:
+- Read: ~/.claude/standards/ticket-standards.md
+- This defines what makes a good, executable ticket
+- Every ticket you create MUST meet these standards
+- Tickets are the foundation of epic execution - poor tickets = failed epic
+
 COORDINATION-FOCUSED ANALYSIS:
 
 1. Read and analyze the planning document at: [planning-doc-path]
@@ -206,6 +214,64 @@ COORDINATION-FOCUSED ANALYSIS:
        depends_on: [list-of-prerequisite-ticket-ids]
        critical: [true/false based on epic requirements]
        coordination_role: "[What this ticket provides for coordination]"
+
+**CRITICAL TICKET QUALITY REQUIREMENTS** (from ticket-standards.md):
+
+Each ticket description MUST be detailed enough to pass these tests:
+1. **Deployability Test**: "If I deployed only this change, would it provide value and not break anything?"
+2. **Single Responsibility**: Does one thing and does it well
+3. **Self-Contained**: Contains all information to complete work without external research
+4. **Smallest Deliverable Value**: Atomic unit that can be deployed independently
+
+Each ticket description MUST include enough detail for these components:
+- **User Stories**: Who benefits and why
+- **Acceptance Criteria**: Specific, measurable, testable (when met + tests pass = mergable)
+- **Technical Context**: What part of system is affected
+- **Dependencies**: Both "blocks" and "blocked by" relationships
+- **Collaborative Code Context**: Which tickets consume/provide interfaces
+- **Function Profiles**: Key function signatures with intent (to the extent known)
+- **Testing Requirements**: Unit/integration/E2E tests per test-standards.md
+- **Definition of Done**: What else must be true beyond acceptance criteria
+- **Non-Goals**: What this ticket will NOT do
+
+Ticket descriptions should be 3-5 paragraphs minimum, providing enough context that
+create-tickets can expand them into full 50-150 line planning documents.
+
+**BAD TICKET (too thin)**:
+```yaml
+- id: create-models
+  description: "Create User and Session models"
+```
+
+**GOOD TICKET (detailed, meets standards)**:
+```yaml
+- id: create-database-models
+  description: |
+    Create User and Session models with authentication methods to serve as the
+    foundation for all authentication tickets. UserModel must include fields for
+    email, password hash (bcrypt with 12 rounds per security constraints), MFA
+    settings, and session tracking. SessionModel manages user sessions with
+    expiration and token validation. Both models must follow the repository
+    pattern established in the codebase.
+
+    This ticket provides the core data layer that tickets 'jwt-token-service',
+    'mfa-integration', and 'auth-api-endpoints' will depend on. The models must
+    expose clean interfaces: UserModel.findByEmail(), UserModel.create(),
+    SessionModel.create(), SessionModel.validate().
+
+    Acceptance criteria: (1) UserModel can save/retrieve with all required fields,
+    (2) SessionModel enforces expiration (15min per security constraints), (3)
+    Database migrations included and tested, (4) Repository pattern implementation
+    with unit tests achieving 80% coverage minimum, (5) Integration tests verify
+    models work with actual database.
+
+    Testing: Unit tests for model validation, save/retrieve operations, edge cases
+    (null values, duplicates). Integration tests with real database. Must achieve
+    80% line coverage minimum per test-standards.md.
+  depends_on: []
+  critical: true
+  coordination_role: "Provides UserModel and SessionModel interfaces for all auth tickets"
+```
 ````
 
 5. Validate the generated epic:
