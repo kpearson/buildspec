@@ -56,7 +56,8 @@ When this command is invoked, you should:
 1. **Read the epic file** at the provided path
 2. **Analyze all aspects** listed above
 3. **Provide specific feedback** with exact ticket IDs, line issues, and concrete improvements
-4. **Write findings** to `.epics/[epic-name]/artifacts/epic-review.md` using the Write tool
+4. **Create the artifacts directory** if it doesn't exist (e.g., `.epics/[epic-name]/artifacts/`)
+5. **Write findings** to `.epics/[epic-name]/artifacts/epic-review.md` using the Write tool
 
 ## Output Format
 

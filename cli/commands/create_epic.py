@@ -349,6 +349,10 @@ def invoke_epic_review(
     """
     console.print("\n[blue]🔍 Invoking epic review...[/blue]")
 
+    # Ensure artifacts directory exists
+    artifacts_dir = Path(epic_path).parent / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
     # Build epic review prompt using SlashCommand
     epic_name = Path(epic_path).stem.replace(".epic", "")
     review_prompt = f"/epic-review {epic_path}"
@@ -380,14 +384,14 @@ def invoke_epic_review(
 
 
 def apply_review_feedback(
-    review_artifact: str, builder_session_id: str, context: ProjectContext
+    review_artifact: str, epic_path: str, context: ProjectContext
 ) -> None:
     """
-    Resume epic builder session with review feedback to implement changes.
+    Spawn new Claude session to apply review feedback to epic file.
 
     Args:
         review_artifact: Path to epic-review.md artifact
-        builder_session_id: Session ID of original epic builder
+        epic_path: Path to the epic YAML file to improve
         context: Project context for execution
     """
     console.print("\n[blue]📝 Applying review feedback...[/blue]")
@@ -396,30 +400,67 @@ def apply_review_feedback(
     with open(review_artifact, "r") as f:
         review_content = f.read()
 
-    # Build resume prompt with review feedback
-    resume_prompt = f"""The epic review is complete. Here are the findings:
+    # Build feedback application prompt
+    feedback_prompt = f"""You are improving an epic file based on a comprehensive review.
+
+## Your Task
+
+Read the epic file at: {epic_path}
+
+Then read this review report and implement the Priority 1 and Priority 2 recommendations:
 
 {review_content}
 
-Please read this review and implement the recommended changes to improve the epic file. Focus on:
-1. Critical Issues (must fix)
-2. Major Improvements (should implement)
-3. Minor Issues (polish)
+## What to Do
 
-After making changes, document what you changed and why."""
+1. Read the current epic file
+2. Focus on implementing:
+   - **Priority 1 (Must Fix)**: Critical issues that block execution
+   - **Priority 2 (Should Fix)**: Major quality improvements
+3. Edit the epic file to apply these changes
+4. Document what you changed in a brief summary
 
-    # Resume builder session with feedback
+## Important
+
+- Make actual changes to the file using the Edit tool
+- Be precise and surgical - don't rewrite things that don't need changing
+- Verify your changes by reading the file after editing
+- If a change would require deeper architectural decisions, note it but don't guess
+
+Begin by reading the epic file and the review, then apply the recommended changes."""
+
+    # Execute feedback application in new Claude session
     runner = ClaudeRunner(context)
-    result = subprocess.run(
-        ["claude", "--resume", builder_session_id],
-        input=resume_prompt,
-        text=True,
-        cwd=context.cwd,
-        capture_output=True,
-    )
+
+    with console.status(
+        "[bold cyan]Claude is applying review feedback...[/bold cyan]",
+        spinner="bouncingBar",
+    ):
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions"],
+            input=feedback_prompt,
+            text=True,
+            cwd=context.cwd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     if result.returncode == 0:
         console.print("[green]✓ Review feedback applied[/green]")
+
+        # Check if epic file was actually modified
+        epic_file = Path(epic_path)
+        if epic_file.exists():
+            # Compare timestamps - review artifact should be older than epic file now
+            review_time = Path(review_artifact).stat().st_mtime
+            epic_time = epic_file.stat().st_mtime
+
+            if epic_time > review_time:
+                console.print("[dim]Epic file updated successfully[/dim]")
+            else:
+                console.print(
+                    "[yellow]⚠ Epic file may not have been modified[/yellow]"
+                )
     else:
         console.print(
             "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
@@ -630,7 +671,9 @@ def command(
 
                     # Step 2: Apply review feedback if review succeeded
                     if review_artifact:
-                        apply_review_feedback(review_artifact, session_id, context)
+                        apply_review_feedback(
+                            review_artifact, str(epic_path), context
+                        )
 
                     # Step 3: Validate ticket count and trigger split workflow if needed
                     epic_data = parse_epic_yaml(str(epic_path))
