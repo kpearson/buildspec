@@ -18,19 +18,43 @@ How can we improve it? Are there any big architectural changes we should make?
 
 ## Description
 
-This command performs a comprehensive review of ALL files in the epic directory (epic YAML, tickets, and any other generated files) to validate the epic is ready for execution. It identifies quality issues, missing information, inconsistencies, and architectural problems.
+This command performs a comprehensive review of ALL files in the epic directory (spec, epic YAML, tickets, and any other generated files) to validate the epic is ready for execution. It assesses:
 
-**Scope**: Reviews everything in `.epics/[epic-name]/` except the `*-spec.md` file.
+1. **Consistency across planning documents** - Do the spec, epic YAML, and tickets align?
+2. **Implementation completeness** - Will implementing the tickets as described produce the functionality described in the spec?
+3. **Test coverage gaps** - Are there areas described in the spec that lack corresponding test requirements in tickets?
+
+The review identifies quality issues, missing information, inconsistencies, and architectural problems.
+
+**Scope**: Reviews everything in `.epics/[epic-name]/`
 
 ## What This Reviews
 
-### 1. Epic Architecture and Design
+### 1. Consistency Across Planning Documents
+- Do the spec, epic YAML, and ticket files tell the same story?
+- Are features described in the spec properly reflected in tickets?
+- Are architectural decisions consistent between spec and epic YAML?
+- Do coordination requirements in epic YAML match what tickets need?
+
+### 2. Implementation Completeness (Spec → Tickets Mapping)
+- Will implementing all tickets produce the functionality described in the spec?
+- Are there spec features missing corresponding tickets?
+- Are there tickets implementing things not in the spec?
+- Do ticket acceptance criteria cover spec requirements?
+
+### 3. Test Coverage Gaps
+- Do tickets include test requirements for all spec functionality?
+- Are edge cases from the spec covered by test requirements?
+- Are integration scenarios from the spec addressed in test tickets?
+- Are non-functional requirements (performance, security) tested?
+
+### 4. Epic Architecture and Design
 - Is the overall epic architecture sound?
 - Are there major architectural issues or design flaws?
 - Should the epic be split or restructured?
 - Are coordination requirements clear and complete?
 
-### 2. Ticket File Existence and Structure
+### 5. Ticket File Existence and Structure
 - Are all tickets from the epic YAML file present in the tickets directory?
 - Does each ticket file follow the expected markdown structure?
 - Are required sections present (Description, Dependencies, Acceptance Criteria, etc.)?
@@ -82,14 +106,17 @@ This command performs a comprehensive review of ALL files in the epic directory 
 
 When this command is invoked, you should:
 
-1. **Read the epic YAML file** to understand architecture, coordination requirements, and dependencies
-2. **Read all ticket files** in the tickets directory
-3. **Read any other artifacts** (state files, documentation, etc.)
-4. **Perform high-level architectural analysis** - are there big problems?
-5. **Analyze each ticket** against the quality criteria above
-6. **Identify cross-cutting issues** and patterns
-7. **Create the artifacts directory** if it doesn't exist (e.g., `.epics/[epic-name]/artifacts/`)
-8. **Write findings** to `.epics/[epic-name]/artifacts/epic-review.md` using the Write tool
+1. **Read the spec file** (`*-spec.md`) to understand what functionality needs to be built
+2. **Read the epic YAML file** to understand architecture, coordination requirements, and dependencies
+3. **Read all ticket files** in the tickets directory
+4. **Read any other artifacts** (state files, documentation, etc.)
+5. **Assess consistency** - Do spec, epic YAML, and tickets align?
+6. **Check implementation completeness** - Will tickets build what the spec describes?
+7. **Identify test coverage gaps** - Are all spec features tested?
+8. **Perform architectural analysis** - Are there big problems or design flaws?
+9. **Identify cross-cutting issues** and patterns
+10. **Create the artifacts directory** if it doesn't exist (e.g., `.epics/[epic-name]/artifacts/`)
+11. **Write findings** to `.epics/[epic-name]/artifacts/epic-review.md` using the Write tool
 
 ## Output Format
 
@@ -106,6 +133,15 @@ ticket_count: [number of tickets reviewed]
 
 ## Executive Summary
 [2-3 sentences: Is this epic ready for execution? High-level quality assessment.]
+
+## Consistency Assessment
+[Do the spec, epic YAML, and tickets align? Are there contradictions or mismatches?]
+
+## Implementation Completeness
+[Will implementing the tickets produce what the spec describes? What's missing or extra?]
+
+## Test Coverage Analysis
+[Are all spec features covered by test requirements? What gaps exist?]
 
 ## Architectural Assessment
 [High-level architectural feedback - big picture issues or design flaws]
@@ -135,19 +171,24 @@ ticket_count: [number of tickets reviewed]
 ```
 
 This will:
-1. Read the user-auth epic YAML for architecture and coordination
-2. Read all ticket markdown files in `.epics/user-auth/tickets/`
-3. Review any other artifacts in the epic directory
-4. Perform comprehensive architectural and implementation review
-5. Write review to `.epics/user-auth/artifacts/epic-review.md`
+1. Read `user-auth-spec.md` to understand required functionality
+2. Read the user-auth epic YAML for architecture and coordination
+3. Read all ticket markdown files in `.epics/user-auth/tickets/`
+4. Review any other artifacts in the epic directory
+5. Assess consistency, completeness, and test coverage
+6. Perform comprehensive architectural and implementation review
+7. Write review to `.epics/user-auth/artifacts/epic-review.md`
 
 ## Important Notes
 
+- **Start with the spec** - it's the source of truth for what needs to be built
 - **Provide both high-level and nitty-gritty feedback** as requested
-- Focus on actionable improvements (architectural and implementation-level)
+- Focus on the three key assessments:
+  1. Consistency across planning documents
+  2. Implementation completeness (spec → tickets mapping)
+  3. Test coverage gaps
 - Point out specific tickets, files, and sections that need work
 - Suggest concrete fixes, not just problems
 - Consider: Can this epic be executed successfully as-is?
-- Check architectural soundness and coordination between tickets
-- Verify implementation clarity and completeness
+- Will the implementation match what the spec promises?
 - Ensure the epic is truly ready for execution
