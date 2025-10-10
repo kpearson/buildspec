@@ -349,6 +349,21 @@ Identify parallelism opportunities:
 
 **Action**: Remove false dependencies, restructure for parallel execution.
 
+### Review 3.8: Independent Expert Review
+
+Get a fresh perspective from a specialized reviewer agent.
+
+**Load the epic-review agent config**:
+- Agent definition: `~/.claude/agents/epic-review.json`
+
+**Provide the reviewer with**:
+1. The original spec file path: `{spec_file_path}`
+2. Your complete draft epic YAML (all sections, all tickets)
+
+**Framing**: "My developer wrote up this epic. Give me feedback on it - high-level and down to the nitty-gritty. How can we improve it? Are there any big changes we should make?"
+
+**After receiving feedback**: Implement the reviewer's suggestions. Document what you changed based on the review before moving to Phase 4.
+
 ### Output Phase 3
 
 Document in your response:
