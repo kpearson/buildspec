@@ -185,7 +185,7 @@ For each logical work unit, create a ticket:
   description: |
     [Paragraph 1: What & Why - User story, value proposition]
 
-    [Paragraph 2: Technical Approach - Integration points, dependencies]
+    [Paragraph 2: Technical Approach - Integration points, dependencies, FUNCTION EXAMPLES]
 
     [Paragraph 3: Acceptance Criteria - Specific, measurable, testable]
 
@@ -203,6 +203,37 @@ For each logical work unit, create a ticket:
 - Vertical slicing preferred (user/developer/system value)
 - Smallest viable size while still being testable
 - 3-5 paragraphs minimum per description
+
+**CRITICAL: Function Examples in Paragraph 2**
+
+To prevent the builder LLM from creating parallel implementations (e.g., creating `src/` when codebase uses `utils/`), **ALWAYS include concrete function examples** in the Technical Approach paragraph:
+
+Format:
+```
+Key functions to implement:
+- function_name(param1: type, param2: type) -> return_type: Brief intent (1-2 sentences)
+- another_function(param: type) -> return_type: Brief intent
+```
+
+Example:
+```
+This ticket creates the GitOperations wrapper. Key functions:
+- create_branch(branch_name: str, base_commit: str): Creates git branch from specified commit using subprocess git commands
+- merge_branch(source: str, target: str, strategy: str, message: str) -> str: Merges source into target with squash/merge strategy, returns merge commit SHA
+- find_most_recent_commit(commits: List[str]) -> str: Uses git log timestamp comparison to find newest commit
+```
+
+**What to include**:
+- ✅ Function name exactly as it should be implemented
+- ✅ Parameter names and types (arity)
+- ✅ Return type
+- ✅ 1-2 sentence intent describing what it does
+
+**What to exclude**:
+- ❌ Full implementation / pseudo-code
+- ❌ Algorithm details
+- ❌ Internal helper functions (only public API)
+- ❌ Step-by-step instructions
 
 ### Step 2.4: Map Dependencies
 
@@ -448,8 +479,12 @@ Implementation noise excluded from epic:
 ## Key Principles (Review Before Starting)
 
 ### Coordination Over Implementation
-- **INCLUDE**: Function signatures, parameter counts, integration contracts, directory structures
-- **EXCLUDE**: Pseudo-code, implementation steps, algorithm details, "how we might" discussions
+- **INCLUDE**: Function signatures with examples, parameter counts, integration contracts, directory structures, function intent descriptions
+- **EXCLUDE**: Pseudo-code, full implementations, algorithm details, step-by-step instructions, "how we might" discussions
+
+**Key Distinction**:
+- ✅ GOOD: `create_branch(name: str, base: str): Creates branch from commit using git subprocess`
+- ❌ BAD: `create_branch() { run git checkout -b $name $base; if error then... }` (pseudo-code)
 
 ### Specific Over Vague
 - **GOOD**: "< 200ms response time", "10,000+ concurrent users"

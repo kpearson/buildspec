@@ -36,13 +36,13 @@ def parse_specialist_output(output: str) -> List[Dict]:
     # Expected format: {"split_epics": [{"name": "epic1", "path": "...", "ticket_count": N}, ...]}
     try:
         # Try to find JSON block in output
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         for line in lines:
             line = line.strip()
-            if line.startswith('{') and 'split_epics' in line:
+            if line.startswith("{") and "split_epics" in line:
                 data = json.loads(line)
-                if 'split_epics' in data:
-                    return data['split_epics']
+                if "split_epics" in data:
+                    return data["split_epics"]
 
         # If no JSON found, raise error
         raise RuntimeError("Could not find split_epics JSON in specialist output")
@@ -65,8 +65,8 @@ def detect_circular_dependencies(tickets: List[Dict]) -> List[Set[str]]:
     # Build ticket ID to dependencies mapping
     ticket_deps = {}
     for ticket in tickets:
-        ticket_id = ticket.get('id', '')
-        depends_on = ticket.get('depends_on', [])
+        ticket_id = ticket.get("id", "")
+        depends_on = ticket.get("depends_on", [])
         ticket_deps[ticket_id] = set(depends_on) if depends_on else set()
 
     # Track visited tickets and current path for cycle detection
@@ -123,8 +123,8 @@ def detect_long_chains(tickets: List[Dict]) -> List[List[str]]:
     # Build ticket ID to dependencies mapping
     ticket_deps = {}
     for ticket in tickets:
-        ticket_id = ticket.get('id', '')
-        depends_on = ticket.get('depends_on', [])
+        ticket_id = ticket.get("id", "")
+        depends_on = ticket.get("depends_on", [])
         ticket_deps[ticket_id] = set(depends_on) if depends_on else set()
 
     # Find all paths using DFS
@@ -172,7 +172,9 @@ def detect_long_chains(tickets: List[Dict]) -> List[List[str]]:
     return long_chains
 
 
-def validate_split_independence(split_epics: List[Dict], epic_data: Dict) -> Tuple[bool, str]:
+def validate_split_independence(
+    split_epics: List[Dict], epic_data: Dict
+) -> Tuple[bool, str]:
     """
     Validate that split epics are fully independent with no cross-epic dependencies.
 
@@ -188,18 +190,18 @@ def validate_split_independence(split_epics: List[Dict], epic_data: Dict) -> Tup
     split_epic_tickets = {}
 
     for split_epic in split_epics:
-        epic_path = split_epic.get('path')
+        epic_path = split_epic.get("path")
         if not epic_path or not Path(epic_path).exists():
             continue
 
         try:
             epic_content = parse_epic_yaml(epic_path)
-            epic_name = split_epic.get('name', epic_path)
-            split_epic_tickets[epic_name] = epic_content.get('tickets', [])
+            epic_name = split_epic.get("name", epic_path)
+            split_epic_tickets[epic_name] = epic_content.get("tickets", [])
 
             # Map each ticket to its epic
-            for ticket in epic_content.get('tickets', []):
-                ticket_id = ticket.get('id', '')
+            for ticket in epic_content.get("tickets", []):
+                ticket_id = ticket.get("id", "")
                 ticket_to_epic[ticket_id] = epic_name
         except Exception as e:
             logger.warning(f"Could not parse split epic {epic_path}: {e}")
@@ -208,8 +210,8 @@ def validate_split_independence(split_epics: List[Dict], epic_data: Dict) -> Tup
     # Check for cross-epic dependencies
     for epic_name, tickets in split_epic_tickets.items():
         for ticket in tickets:
-            ticket_id = ticket.get('id', '')
-            depends_on = ticket.get('depends_on', [])
+            ticket_id = ticket.get("id", "")
+            depends_on = ticket.get("depends_on", [])
 
             for dep in depends_on:
                 dep_epic = ticket_to_epic.get(dep)
@@ -293,7 +295,9 @@ def archive_original_epic(epic_path: str) -> str:
 
     # Warn if .original already exists
     if archived_path.exists():
-        console.print(f"[yellow]Warning: {archived_path} already exists, overwriting[/yellow]")
+        console.print(
+            f"[yellow]Warning: {archived_path} already exists, overwriting[/yellow]"
+        )
 
     # Rename file
     epic_file.rename(archived_path)
@@ -311,21 +315,27 @@ def display_split_results(split_epics: List[Dict], archived_path: str) -> None:
         archived_path: Path to archived original epic
     """
     total_epics = len(split_epics)
-    total_tickets = sum(e.get('ticket_count', 0) for e in split_epics)
+    total_tickets = sum(e.get("ticket_count", 0) for e in split_epics)
 
-    console.print(f"\n[green]✓ Epic split into {total_epics} independent deliverables ({total_tickets} tickets total)[/green]")
+    console.print(
+        f"\n[green]✓ Epic split into {total_epics} independent deliverables ({total_tickets} tickets total)[/green]"
+    )
     console.print("\n[bold]Created split epics:[/bold]")
     for epic in split_epics:
-        name = epic.get('name', 'unknown')
-        path = epic.get('path', 'unknown')
-        count = epic.get('ticket_count', 0)
+        name = epic.get("name", "unknown")
+        path = epic.get("path", "unknown")
+        count = epic.get("ticket_count", 0)
         console.print(f"  • {name}: {path} ({count} tickets)")
 
     console.print(f"\n[dim]Original epic archived as: {archived_path}[/dim]")
-    console.print("\n[yellow]Execute each epic independently - no dependencies between them[/yellow]")
+    console.print(
+        "\n[yellow]Execute each epic independently - no dependencies between them[/yellow]"
+    )
 
 
-def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, context: ProjectContext) -> None:
+def handle_split_workflow(
+    epic_path: str, spec_path: str, ticket_count: int, context: ProjectContext
+) -> None:
     """
     Orchestrate complete epic split process with edge case handling.
 
@@ -338,12 +348,14 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
     Raises:
         RuntimeError: If split workflow fails
     """
-    console.print(f"\n[yellow]Epic has {ticket_count} tickets (>= 13). Initiating split workflow...[/yellow]")
+    console.print(
+        f"\n[yellow]Epic has {ticket_count} tickets (>= 13). Initiating split workflow...[/yellow]"
+    )
 
     try:
         # 1. Parse epic to analyze dependencies
         epic_data = parse_epic_yaml(epic_path)
-        tickets = epic_data.get('tickets', [])
+        tickets = epic_data.get("tickets", [])
 
         # 2. Detect edge cases
         logger.info(f"Analyzing {len(tickets)} tickets for edge cases...")
@@ -351,7 +363,9 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
         # Detect circular dependencies
         circular_groups = detect_circular_dependencies(tickets)
         if circular_groups:
-            console.print(f"[yellow]Warning: Found {len(circular_groups)} circular dependency groups. These will stay together.[/yellow]")
+            console.print(
+                f"[yellow]Warning: Found {len(circular_groups)} circular dependency groups. These will stay together.[/yellow]"
+            )
             for i, group in enumerate(circular_groups, 1):
                 logger.info(f"Circular group {i}: {group}")
 
@@ -360,23 +374,31 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
         if long_chains:
             max_chain_length = max(len(chain) for chain in long_chains)
             if max_chain_length > 12:
-                console.print(f"[red]Error: Epic has dependency chain of {max_chain_length} tickets (>12 limit).[/red]")
+                console.print(
+                    f"[red]Error: Epic has dependency chain of {max_chain_length} tickets (>12 limit).[/red]"
+                )
                 console.print("[red]Cannot split while preserving dependencies.[/red]")
-                console.print("[yellow]Recommendation: Review epic design to reduce coupling between tickets.[/yellow]")
+                console.print(
+                    "[yellow]Recommendation: Review epic design to reduce coupling between tickets.[/yellow]"
+                )
                 logger.error(f"Long dependency chain detected: {long_chains[0]}")
                 return
 
         # 3. Build specialist prompt with edge case context
         prompt_builder = PromptBuilder(context)
-        specialist_prompt = prompt_builder.build_split_epic(epic_path, spec_path, ticket_count)
+        specialist_prompt = prompt_builder.build_split_epic(
+            epic_path, spec_path, ticket_count
+        )
 
         # 4. Invoke Claude subprocess
-        console.print("[blue]Invoking specialist agent to analyze and split epic...[/blue]")
+        console.print(
+            "[blue]Invoking specialist agent to analyze and split epic...[/blue]"
+        )
         result = subprocess.run(
             ["claude", "--prompt", specialist_prompt],
             capture_output=True,
             text=True,
-            cwd=context.project_root
+            cwd=context.project_root,
         )
 
         if result.returncode != 0:
@@ -393,16 +415,20 @@ def handle_split_workflow(epic_path: str, spec_path: str, ticket_count: int, con
         is_valid, error_msg = validate_split_independence(split_epics, epic_data)
         if not is_valid:
             console.print(f"[red]Error: Split validation failed: {error_msg}[/red]")
-            console.print("[yellow]Epic is too tightly coupled to split. Keeping as single epic.[/yellow]")
+            console.print(
+                "[yellow]Epic is too tightly coupled to split. Keeping as single epic.[/yellow]"
+            )
             logger.error(f"Split independence validation failed: {error_msg}")
             return
 
         # 7. Create subdirectories
         base_dir = Path(epic_path).parent
-        epic_names = [e['name'] for e in split_epics]
+        epic_names = [e["name"] for e in split_epics]
         created_dirs = create_split_subdirectories(str(base_dir), epic_names)
 
-        console.print(f"[dim]Created {len(created_dirs)} subdirectories for split epics[/dim]")
+        console.print(
+            f"[dim]Created {len(created_dirs)} subdirectories for split epics[/dim]"
+        )
 
         # 8. Archive original
         archived_path = archive_original_epic(epic_path)
@@ -430,14 +456,18 @@ def command(
         None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
     ),
     no_split: bool = typer.Option(
-        False, "--no-split", help="Skip automatic epic splitting even if ticket count >= 13"
+        False,
+        "--no-split",
+        help="Skip automatic epic splitting even if ticket count >= 13",
     ),
 ):
     """Create epic file from planning document."""
     try:
         # Resolve planning doc path with smart handling
         try:
-            planning_doc_path = resolve_file_argument(planning_doc, expected_pattern="spec", arg_name="planning document")
+            planning_doc_path = resolve_file_argument(
+                planning_doc, expected_pattern="spec", arg_name="planning document"
+            )
         except PathResolutionError as e:
             console.print(f"[red]ERROR:[/red] {e}")
             raise typer.Exit(code=1) from e
@@ -469,25 +499,31 @@ def command(
         if exit_code == 0:
             # Post-execution: find and validate epic filename
             epic_dir = planning_doc_path.parent
-            expected_base = planning_doc_path.stem.replace('-spec', '').replace('_spec', '')
+            expected_base = planning_doc_path.stem.replace("-spec", "").replace(
+                "_spec", ""
+            )
 
             # Look for any YAML files created
-            yaml_files = sorted(epic_dir.glob('*.yaml'), key=lambda p: p.stat().st_mtime, reverse=True)
+            yaml_files = sorted(
+                epic_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True
+            )
 
             epic_path = None
             for yaml_file in yaml_files:
                 # Skip if already correctly named
-                if yaml_file.name.endswith('.epic.yaml'):
+                if yaml_file.name.endswith(".epic.yaml"):
                     epic_path = yaml_file
                     continue
 
                 # Check if this looks like our epic (has the expected base name)
                 if expected_base in yaml_file.stem:
                     # Rename to add .epic suffix
-                    correct_name = yaml_file.stem + '.epic.yaml'
+                    correct_name = yaml_file.stem + ".epic.yaml"
                     correct_path = yaml_file.parent / correct_name
                     yaml_file.rename(correct_path)
-                    console.print(f"[dim]Renamed: {yaml_file.name} → {correct_name}[/dim]")
+                    console.print(
+                        f"[dim]Renamed: {yaml_file.name} → {correct_name}[/dim]"
+                    )
                     epic_path = correct_path
                     break
 
@@ -495,14 +531,20 @@ def command(
             if epic_path and epic_path.exists():
                 try:
                     epic_data = parse_epic_yaml(str(epic_path))
-                    ticket_count = epic_data['ticket_count']
+                    ticket_count = epic_data["ticket_count"]
 
                     if validate_ticket_count(ticket_count):
                         # Check if --no-split flag is set
                         if no_split:
-                            console.print(f"\n[yellow]Warning: --no-split flag set. Epic has {ticket_count} tickets which may be difficult to execute.[/yellow]")
-                            console.print("[yellow]Recommendation: Epics with >= 13 tickets may take longer than 2 hours to execute.[/yellow]")
-                            console.print("\n[green]✓ Epic created successfully[/green]")
+                            console.print(
+                                f"\n[yellow]Warning: --no-split flag set. Epic has {ticket_count} tickets which may be difficult to execute.[/yellow]"
+                            )
+                            console.print(
+                                "[yellow]Recommendation: Epics with >= 13 tickets may take longer than 2 hours to execute.[/yellow]"
+                            )
+                            console.print(
+                                "\n[green]✓ Epic created successfully[/green]"
+                            )
                             console.print(f"[dim]Session ID: {session_id}[/dim]")
                         else:
                             # Trigger split workflow
@@ -510,14 +552,16 @@ def command(
                                 epic_path=str(epic_path),
                                 spec_path=str(planning_doc_path),
                                 ticket_count=ticket_count,
-                                context=context
+                                context=context,
                             )
                     else:
                         # Normal success path
                         console.print("\n[green]✓ Epic created successfully[/green]")
                         console.print(f"[dim]Session ID: {session_id}[/dim]")
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Could not validate epic for splitting: {e}[/yellow]")
+                    console.print(
+                        f"[yellow]Warning: Could not validate epic for splitting: {e}[/yellow]"
+                    )
                     # Continue - don't fail epic creation on validation error
                     console.print("\n[green]✓ Epic created successfully[/green]")
                     console.print(f"[dim]Session ID: {session_id}[/dim]")
