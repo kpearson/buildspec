@@ -26,8 +26,11 @@ echo ""
 echo "🔗 Installing Claude Code files..."
 mkdir -p "$CLAUDE_DIR"/{agents,commands,hooks,mcp-servers,scripts,standards}
 
-# Link agents
+# Link agents (both .md and .json files)
 for file in "$PROJECT_ROOT/claude_files/agents"/*.md; do
+  [ -f "$file" ] && ln -sf "$file" "$CLAUDE_DIR/agents/"
+done
+for file in "$PROJECT_ROOT/claude_files/agents"/*.json; do
   [ -f "$file" ] && ln -sf "$file" "$CLAUDE_DIR/agents/"
 done
 
