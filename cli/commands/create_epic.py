@@ -384,14 +384,15 @@ def invoke_epic_review(
 
 
 def apply_review_feedback(
-    review_artifact: str, epic_path: str, context: ProjectContext
+    review_artifact: str, epic_path: str, builder_session_id: str, context: ProjectContext
 ) -> None:
     """
-    Spawn new Claude session to apply review feedback to epic file.
+    Resume builder Claude session to apply review feedback to epic file.
 
     Args:
         review_artifact: Path to epic-review.md artifact
         epic_path: Path to the epic YAML file to improve
+        builder_session_id: Session ID of original epic builder to resume
         context: Project context for execution
     """
     console.print("\n[blue]📝 Applying review feedback...[/blue]")
@@ -413,23 +414,59 @@ Then read this review report and implement the Priority 1 and Priority 2 recomme
 
 ## What to Do
 
-1. Read the current epic file
-2. Focus on implementing:
-   - **Priority 1 (Must Fix)**: Critical issues that block execution
-   - **Priority 2 (Should Fix)**: Major quality improvements
-3. Edit the epic file to apply these changes
-4. Document what you changed in a brief summary
+1. Read the current epic file to understand its structure
+2. Identify the specific Priority 1 and Priority 2 issues mentioned in the review
+3. Make **surgical edits** to fix each issue:
+   - Use Edit tool for targeted changes (not Write tool for complete rewrites)
+   - Keep the existing epic structure and field names
+   - Only modify the specific sections that need fixing
+   - Preserve all existing content that isn't being fixed
 
-## Important
+## Priority 1 Issues (Must Fix)
 
-- Make actual changes to the file using the Edit tool
-- Be precise and surgical - don't rewrite things that don't need changing
-- Verify your changes by reading the file after editing
-- If a change would require deeper architectural decisions, note it but don't guess
+Focus on these critical fixes:
+- Add missing function examples to ticket descriptions (Paragraph 2)
+- Define missing terms (like "epic baseline") in coordination_requirements
+- Add missing specifications (error handling, acceptance criteria formats)
+- Fix dependency errors
 
-Begin by reading the epic file and the review, then apply the recommended changes."""
+## Priority 2 Issues (Should Fix)
 
-    # Execute feedback application in new Claude session
+If time permits:
+- Add integration contracts to tickets
+- Clarify implementation details
+- Add test coverage requirements
+
+## Important Rules
+
+- **DO NOT rewrite the entire epic** - make targeted edits only
+- **DO NOT change the epic schema** - keep existing field names (epic, description, ticket_count, etc.)
+- **DO NOT change ticket IDs** - keep existing identifiers
+- **DO use Edit tool** - for surgical changes to specific sections
+- **DO preserve structure** - maintain YAML formatting and organization
+- **DO verify changes** - read the file after each edit to confirm
+
+## Example of Surgical Edit
+
+Bad (complete rewrite):
+```
+Write entire new epic with different structure
+```
+
+Good (targeted fix):
+```
+Edit ticket description to add function examples in Paragraph 2:
+- Old: "Implement git operations wrapper"
+- New: "Implement git operations wrapper.
+
+  Key functions:
+  - create_branch(name: str, base: str) -> None: creates branch from commit
+  - push_branch(name: str) -> None: pushes branch to remote"
+```
+
+Begin by reading the epic file, then make surgical edits to fix Priority 1 issues."""
+
+    # Execute feedback application by resuming builder session
     runner = ClaudeRunner(context)
 
     with console.status(
@@ -437,7 +474,12 @@ Begin by reading the epic file and the review, then apply the recommended change
         spinner="bouncingBar",
     ):
         result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
+            [
+                "claude",
+                "--dangerously-skip-permissions",
+                "--session-id",
+                builder_session_id,
+            ],
             input=feedback_prompt,
             text=True,
             cwd=context.cwd,
@@ -672,7 +714,7 @@ def command(
                     # Step 2: Apply review feedback if review succeeded
                     if review_artifact:
                         apply_review_feedback(
-                            review_artifact, str(epic_path), context
+                            review_artifact, str(epic_path), session_id, context
                         )
 
                     # Step 3: Validate ticket count and trigger split workflow if needed

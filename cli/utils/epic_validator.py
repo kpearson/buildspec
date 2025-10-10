@@ -10,11 +10,18 @@ def parse_epic_yaml(epic_file_path: str) -> Dict:
     """
     Parse epic YAML file and extract ticket count for validation.
 
+    Supports two epic formats:
+    1. Original format: epic, description, ticket_count, tickets
+    2. Rich format: id, title, description, goals, success_criteria, coordination_requirements, tickets
+
     Args:
         epic_file_path: Absolute path to epic YAML file
 
     Returns:
         dict with keys: 'ticket_count', 'epic', 'tickets'
+        - epic: epic title (from 'epic' or 'title' field)
+        - ticket_count: number of tickets (explicit or len(tickets))
+        - tickets: list of ticket dicts
 
     Raises:
         FileNotFoundError: If epic file doesn't exist
@@ -37,17 +44,28 @@ def parse_epic_yaml(epic_file_path: str) -> Dict:
     if epic_data is None:
         raise ValueError(f"Epic file is empty: {epic_file_path}")
 
-    # Validate required fields exist
-    required_fields = ['ticket_count', 'epic', 'tickets']
-    missing_fields = [field for field in required_fields if field not in epic_data]
+    # Check if this is the rich format (has 'id' and 'title') or original format (has 'epic')
+    if 'id' in epic_data and 'title' in epic_data:
+        # Rich format
+        epic_title = epic_data.get('title', epic_data.get('id', 'Unknown Epic'))
+        tickets = epic_data.get('tickets', [])
+        ticket_count = epic_data.get('ticket_count', len(tickets))
+    elif 'epic' in epic_data:
+        # Original format
+        epic_title = epic_data['epic']
+        tickets = epic_data.get('tickets', [])
+        ticket_count = epic_data.get('ticket_count', len(tickets))
+    else:
+        raise KeyError("Epic file must have either 'epic' field (original format) or 'id'+'title' fields (rich format)")
 
-    if missing_fields:
-        raise KeyError(f"Missing required fields in epic YAML: {', '.join(missing_fields)}")
+    # Validate tickets exist
+    if not tickets:
+        raise ValueError(f"Epic file has no tickets: {epic_file_path}")
 
     return {
-        'ticket_count': epic_data['ticket_count'],
-        'epic': epic_data['epic'],
-        'tickets': epic_data['tickets']
+        'ticket_count': ticket_count,
+        'epic': epic_title,
+        'tickets': tickets
     }
 
 
