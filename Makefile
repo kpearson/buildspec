@@ -1,4 +1,4 @@
-.PHONY: install uninstall reinstall test build install-binary clean help
+.PHONY: install uninstall reinstall test build install-binary clean help archive-epic
 
 # Default target
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  make reinstall       Uninstall and reinstall buildspec"
 	@echo "  make clean           Remove build artifacts"
 	@echo "  make test            Test the CLI installation"
+	@echo "  make archive-epic    Move generated epic files to /tmp with timestamp"
 	@echo "  make help            Show this help message"
 	@echo ""
 	@echo "Recommended: Use 'make build && make install-binary' for standalone installation"
@@ -103,3 +104,27 @@ test:
 		echo "Run 'make install' or 'make install-binary' first"; \
 		exit 1; \
 	fi
+
+archive-epic:
+	@echo "Archiving generated epic files..."
+	@if [ -z "$(EPIC)" ]; then \
+		echo "❌ Error: EPIC variable not set"; \
+		echo "Usage: make archive-epic EPIC=state-machine"; \
+		exit 1; \
+	fi
+	@if [ ! -d ".epics/$(EPIC)" ]; then \
+		echo "❌ Error: Epic directory not found: .epics/$(EPIC)"; \
+		exit 1; \
+	fi
+	@TIMESTAMP=$$(date +%s); \
+	EPIC_NAME="$(EPIC)"; \
+	if [ -d ".epics/$${EPIC_NAME}/artifacts" ]; then \
+		mv ".epics/$${EPIC_NAME}/artifacts" "/tmp/$${TIMESTAMP}-$${EPIC_NAME}-artifacts"; \
+		echo "✅ Moved artifacts to: /tmp/$${TIMESTAMP}-$${EPIC_NAME}-artifacts"; \
+	fi; \
+	if [ -f ".epics/$${EPIC_NAME}/$${EPIC_NAME}.epic.yaml" ]; then \
+		mv ".epics/$${EPIC_NAME}/$${EPIC_NAME}.epic.yaml" "/tmp/$${TIMESTAMP}-$${EPIC_NAME}.epic.yaml"; \
+		echo "✅ Moved epic to: /tmp/$${TIMESTAMP}-$${EPIC_NAME}.epic.yaml"; \
+	fi
+	@echo ""
+	@echo "✅ Archive complete"
