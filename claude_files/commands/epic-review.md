@@ -64,10 +64,13 @@ When this command is invoked, you should:
 Your review should be written to `.epics/[epic-name]/artifacts/epic-review.md` with this structure:
 
 ```markdown
-# Epic Review Report
+---
+date: [current date in YYYY-MM-DD format]
+epic: [epic name from epic file]
+ticket_count: [number of tickets]
+---
 
-Date: [current date]
-Epic: [epic name]
+# Epic Review Report
 
 ## Executive Summary
 [2-3 sentence overview of epic quality]
@@ -87,6 +90,8 @@ Epic: [epic name]
 ## Recommendations
 [Prioritized list of changes to make]
 ```
+
+**Note:** Session IDs (`builder_session_id` and `reviewer_session_id`) will be added automatically by the build system after review completion. You don't need to include them in the frontmatter.
 
 ## Example
 

@@ -333,6 +333,88 @@ def display_split_results(split_epics: List[Dict], archived_path: str) -> None:
     )
 
 
+def _add_session_ids_to_review(
+    review_artifact: Path, builder_session_id: str, reviewer_session_id: str
+) -> None:
+    """
+    Add or update session IDs in the YAML frontmatter of the review artifact.
+
+    Args:
+        review_artifact: Path to epic-review.md file
+        builder_session_id: Session ID of the epic builder
+        reviewer_session_id: Session ID of the epic reviewer
+    """
+    import re
+
+    content = review_artifact.read_text()
+
+    # Check if YAML frontmatter exists
+    frontmatter_match = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+
+    if frontmatter_match:
+        # Parse existing frontmatter
+        frontmatter = frontmatter_match.group(1)
+
+        # Update or add session IDs
+        if 'builder_session_id:' in frontmatter:
+            frontmatter = re.sub(
+                r'builder_session_id:.*',
+                f'builder_session_id: {builder_session_id}',
+                frontmatter
+            )
+        else:
+            frontmatter += f'\nbuilder_session_id: {builder_session_id}'
+
+        if 'reviewer_session_id:' in frontmatter:
+            frontmatter = re.sub(
+                r'reviewer_session_id:.*',
+                f'reviewer_session_id: {reviewer_session_id}',
+                frontmatter
+            )
+        else:
+            frontmatter += f'\nreviewer_session_id: {reviewer_session_id}'
+
+        # Reconstruct content with updated frontmatter
+        body = content[frontmatter_match.end():]
+        updated_content = f'---\n{frontmatter}\n---\n{body}'
+    else:
+        # No frontmatter exists - add it
+        # Extract metadata from old format if present
+        date_match = re.search(r'\*\*Date:\*\* (\S+)', content)
+        epic_match = re.search(r'\*\*Epic:\*\* (.+?)(?:\*\*|$)', content)
+        ticket_match = re.search(r'\*\*Ticket Count:\*\* (\d+)', content)
+
+        date = date_match.group(1) if date_match else 'unknown'
+        epic = epic_match.group(1).strip() if epic_match else 'unknown'
+        ticket_count = ticket_match.group(1) if ticket_match else 'unknown'
+
+        # Create frontmatter
+        frontmatter = f"""---
+date: {date}
+epic: {epic}
+ticket_count: {ticket_count}
+builder_session_id: {builder_session_id}
+reviewer_session_id: {reviewer_session_id}
+---"""
+
+        # Remove old metadata from body if present
+        body = content
+        if date_match or epic_match or ticket_match:
+            # Remove the old metadata line(s)
+            body = re.sub(
+                r'\*\*Date:\*\*.*?\*\*Ticket Count:\*\* \d+\n*',
+                '',
+                body,
+                flags=re.DOTALL
+            )
+
+        updated_content = f'{frontmatter}\n\n{body.lstrip()}'
+
+    # Write updated content
+    review_artifact.write_text(updated_content)
+    logger.info(f"Added session IDs to review artifact: {review_artifact}")
+
+
 def invoke_epic_review(
     epic_path: str, builder_session_id: str, context: ProjectContext
 ) -> Optional[str]:
@@ -378,6 +460,11 @@ def invoke_epic_review(
             "[yellow]⚠ Review artifact not found, skipping review feedback[/yellow]"
         )
         return None
+
+    # Post-process: Add session IDs to YAML frontmatter
+    _add_session_ids_to_review(
+        review_artifact, builder_session_id, review_session_id
+    )
 
     console.print(f"[green]✓ Review complete: {review_artifact}[/green]")
     return str(review_artifact)
