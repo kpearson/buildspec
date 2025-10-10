@@ -12,7 +12,6 @@ from rich.console import Console
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
-from cli.utils.agent_loader import load_builtin_agent
 from cli.utils.epic_validator import parse_epic_yaml, validate_ticket_count
 from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
@@ -46,9 +45,7 @@ def parse_specialist_output(output: str) -> List[Dict]:
                     return data["split_epics"]
 
         # If no JSON found, raise error
-        raise RuntimeError(
-            "Could not find split_epics JSON in specialist output"
-        )
+        raise RuntimeError("Could not find split_epics JSON in specialist output")
     except json.JSONDecodeError as e:
         raise RuntimeError(f"Failed to parse specialist output as JSON: {e}")
 
@@ -170,9 +167,7 @@ def detect_long_chains(tickets: List[Dict]) -> List[List[str]]:
         if path_key not in seen and len(path) >= 12:
             long_chains.append(path)
             seen.add(path_key)
-            logger.info(
-                f"Detected long dependency chain ({len(path)} tickets): {path}"
-            )
+            logger.info(f"Detected long dependency chain ({len(path)} tickets): {path}")
 
     return long_chains
 
@@ -231,9 +226,7 @@ def validate_split_independence(
     return True, ""
 
 
-def create_split_subdirectories(
-    base_dir: str, epic_names: List[str]
-) -> List[str]:
+def create_split_subdirectories(base_dir: str, epic_names: List[str]) -> List[str]:
     """
     Create subdirectory structure for each split epic.
 
@@ -340,6 +333,99 @@ def display_split_results(split_epics: List[Dict], archived_path: str) -> None:
     )
 
 
+def invoke_epic_review(
+    epic_path: str, builder_session_id: str, context: ProjectContext
+) -> Optional[str]:
+    """
+    Invoke epic-review command on the newly created epic.
+
+    Args:
+        epic_path: Path to the epic YAML file to review
+        builder_session_id: Session ID of the epic builder Claude session
+        context: Project context for execution
+
+    Returns:
+        Path to review artifact file, or None if review failed
+    """
+    console.print("\n[blue]🔍 Invoking epic review...[/blue]")
+
+    # Build epic review prompt using SlashCommand
+    epic_name = Path(epic_path).stem.replace(".epic", "")
+    review_prompt = f"/epic-review {epic_path}"
+
+    # Execute epic review in new Claude session
+    runner = ClaudeRunner(context)
+    review_exit_code, review_session_id = runner.execute(
+        review_prompt, console=console
+    )
+
+    if review_exit_code != 0:
+        console.print(
+            "[yellow]⚠ Epic review failed, skipping review feedback[/yellow]"
+        )
+        return None
+
+    # Check for review artifact
+    artifacts_dir = Path(epic_path).parent / "artifacts"
+    review_artifact = artifacts_dir / "epic-review.md"
+
+    if not review_artifact.exists():
+        console.print(
+            "[yellow]⚠ Review artifact not found, skipping review feedback[/yellow]"
+        )
+        return None
+
+    console.print(f"[green]✓ Review complete: {review_artifact}[/green]")
+    return str(review_artifact)
+
+
+def apply_review_feedback(
+    review_artifact: str, builder_session_id: str, context: ProjectContext
+) -> None:
+    """
+    Resume epic builder session with review feedback to implement changes.
+
+    Args:
+        review_artifact: Path to epic-review.md artifact
+        builder_session_id: Session ID of original epic builder
+        context: Project context for execution
+    """
+    console.print("\n[blue]📝 Applying review feedback...[/blue]")
+
+    # Read review artifact
+    with open(review_artifact, "r") as f:
+        review_content = f.read()
+
+    # Build resume prompt with review feedback
+    resume_prompt = f"""The epic review is complete. Here are the findings:
+
+{review_content}
+
+Please read this review and implement the recommended changes to improve the epic file. Focus on:
+1. Critical Issues (must fix)
+2. Major Improvements (should implement)
+3. Minor Issues (polish)
+
+After making changes, document what you changed and why."""
+
+    # Resume builder session with feedback
+    runner = ClaudeRunner(context)
+    result = subprocess.run(
+        ["claude", "--resume", builder_session_id],
+        input=resume_prompt,
+        text=True,
+        cwd=context.cwd,
+        capture_output=True,
+    )
+
+    if result.returncode == 0:
+        console.print("[green]✓ Review feedback applied[/green]")
+    else:
+        console.print(
+            "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
+        )
+
+
 def handle_split_workflow(
     epic_path: str, spec_path: str, ticket_count: int, context: ProjectContext
 ) -> None:
@@ -384,15 +470,11 @@ def handle_split_workflow(
                 console.print(
                     f"[red]Error: Epic has dependency chain of {max_chain_length} tickets (>12 limit).[/red]"
                 )
-                console.print(
-                    "[red]Cannot split while preserving dependencies.[/red]"
-                )
+                console.print("[red]Cannot split while preserving dependencies.[/red]")
                 console.print(
                     "[yellow]Recommendation: Review epic design to reduce coupling between tickets.[/yellow]"
                 )
-                logger.error(
-                    f"Long dependency chain detected: {long_chains[0]}"
-                )
+                logger.error(f"Long dependency chain detected: {long_chains[0]}")
                 return
 
         # 3. Build specialist prompt with edge case context
@@ -419,19 +501,13 @@ def handle_split_workflow(
         split_epics = parse_specialist_output(result.stdout)
 
         if not split_epics:
-            raise RuntimeError(
-                "Specialist agent did not return any split epics"
-            )
+            raise RuntimeError("Specialist agent did not return any split epics")
 
         # 6. Validate split independence
         console.print("[blue]Validating split epic independence...[/blue]")
-        is_valid, error_msg = validate_split_independence(
-            split_epics, epic_data
-        )
+        is_valid, error_msg = validate_split_independence(split_epics, epic_data)
         if not is_valid:
-            console.print(
-                f"[red]Error: Split validation failed: {error_msg}[/red]"
-            )
+            console.print(f"[red]Error: Split validation failed: {error_msg}[/red]")
             console.print(
                 "[yellow]Epic is too tightly coupled to split. Keeping as single epic.[/yellow]"
             )
@@ -470,10 +546,7 @@ def command(
         None, "--output", "-o", help="Override output epic file path"
     ),
     project_dir: Optional[Path] = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Project directory (default: auto-detect)",
+        None, "--project-dir", "-p", help="Project directory (default: auto-detect)"
     ),
     no_split: bool = typer.Option(
         False,
@@ -486,9 +559,7 @@ def command(
         # Resolve planning doc path with smart handling
         try:
             planning_doc_path = resolve_file_argument(
-                planning_doc,
-                expected_pattern="spec",
-                arg_name="planning document",
+                planning_doc, expected_pattern="spec", arg_name="planning document"
             )
         except PathResolutionError as e:
             console.print(f"[red]ERROR:[/red] {e}")
@@ -514,14 +585,9 @@ def command(
         # Print action
         console.print(f"\n[bold]Creating epic from:[/bold] {planning_doc_path}")
 
-        # Load epic-review agent
-        agents = load_builtin_agent("epic-review", context.claude_dir)
-
         # Execute
         runner = ClaudeRunner(context)
-        exit_code, session_id = runner.execute(
-            prompt, console=console, agents=agents
-        )
+        exit_code, session_id = runner.execute(prompt, console=console)
 
         if exit_code == 0:
             # Post-execution: find and validate epic filename
@@ -532,9 +598,7 @@ def command(
 
             # Look for any YAML files created
             yaml_files = sorted(
-                epic_dir.glob("*.yaml"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
+                epic_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True
             )
 
             epic_path = None
@@ -556,9 +620,19 @@ def command(
                     epic_path = correct_path
                     break
 
-            # Validate ticket count and trigger split workflow if needed
+            # Invoke epic review workflow
             if epic_path and epic_path.exists():
                 try:
+                    # Step 1: Review the epic
+                    review_artifact = invoke_epic_review(
+                        str(epic_path), session_id, context
+                    )
+
+                    # Step 2: Apply review feedback if review succeeded
+                    if review_artifact:
+                        apply_review_feedback(review_artifact, session_id, context)
+
+                    # Step 3: Validate ticket count and trigger split workflow if needed
                     epic_data = parse_epic_yaml(str(epic_path))
                     ticket_count = epic_data["ticket_count"]
 
@@ -574,9 +648,7 @@ def command(
                             console.print(
                                 "\n[green]✓ Epic created successfully[/green]"
                             )
-                            console.print(
-                                f"[dim]Session ID: {session_id}[/dim]"
-                            )
+                            console.print(f"[dim]Session ID: {session_id}[/dim]")
                         else:
                             # Trigger split workflow
                             handle_split_workflow(
@@ -587,18 +659,14 @@ def command(
                             )
                     else:
                         # Normal success path
-                        console.print(
-                            "\n[green]✓ Epic created successfully[/green]"
-                        )
+                        console.print("\n[green]✓ Epic created successfully[/green]")
                         console.print(f"[dim]Session ID: {session_id}[/dim]")
                 except Exception as e:
                     console.print(
                         f"[yellow]Warning: Could not validate epic for splitting: {e}[/yellow]"
                     )
                     # Continue - don't fail epic creation on validation error
-                    console.print(
-                        "\n[green]✓ Epic created successfully[/green]"
-                    )
+                    console.print("\n[green]✓ Epic created successfully[/green]")
                     console.print(f"[dim]Session ID: {session_id}[/dim]")
             else:
                 console.print("\n[green]✓ Epic created successfully[/green]")

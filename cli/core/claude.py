@@ -29,7 +29,6 @@ class ClaudeRunner:
         prompt: str,
         session_id: Optional[str] = None,
         console: Optional[Console] = None,
-        agents: Optional[str] = None,
     ) -> Tuple[int, str]:
         """Execute Claude CLI subprocess with constructed prompt in project context
         working directory.
@@ -38,7 +37,6 @@ class ClaudeRunner:
             prompt: Complete prompt string to pass to Claude CLI
             session_id: Optional session ID to use (generated if not provided)
             console: Optional Rich console for displaying progress spinner
-            agents: Optional JSON string defining custom agents (e.g., '{"reviewer": {...}}')
 
         Returns:
             Tuple of (exit_code, session_id):
@@ -52,37 +50,41 @@ class ClaudeRunner:
             session_id = str(uuid.uuid4())
 
         try:
-            # Build command args
-            cmd = [
-                "claude",
-                "--dangerously-skip-permissions",
-                "--session-id",
-                session_id,
-            ]
-
-            # Add agents if provided (expects JSON string)
-            if agents:
-                cmd.extend(["--agents", agents])
-
-            # Build subprocess kwargs
-            run_kwargs = {
-                "input": prompt,
-                "cwd": self.context.cwd,
-                "check": False,
-                "text": True,
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
-            }
-
-            # Run subprocess (with optional spinner)
+            # Pipe prompt via stdin instead of -p flag to avoid subprocess hanging issues
             if console:
                 with console.status(
                     "[bold cyan]Executing with Claude...[/bold cyan]",
                     spinner="bouncingBar",
                 ):
-                    result = subprocess.run(cmd, **run_kwargs)
+                    result = subprocess.run(
+                        [
+                            "claude",
+                            "--dangerously-skip-permissions",
+                            "--session-id",
+                            session_id,
+                        ],
+                        input=prompt,
+                        cwd=self.context.cwd,
+                        check=False,
+                        text=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             else:
-                result = subprocess.run(cmd, **run_kwargs)
+                result = subprocess.run(
+                    [
+                        "claude",
+                        "--dangerously-skip-permissions",
+                        "--session-id",
+                        session_id,
+                    ],
+                    input=prompt,
+                    cwd=self.context.cwd,
+                    check=False,
+                    text=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
 
             return result.returncode, session_id
         except FileNotFoundError as e:

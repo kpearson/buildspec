@@ -6,28 +6,34 @@ This is the prompt that will be used when `/create-epic <spec-file>` is invoked.
 
 # Your Task: Transform Specification into Executable Epic
 
-You are transforming an unstructured feature specification into an executable epic YAML file that enables autonomous ticket execution.
+You are transforming an unstructured feature specification into an executable
+epic YAML file that enables autonomous ticket execution.
 
 ## Input
 
 You have been given:
+
 - **Spec file path**: `{spec_file_path}`
 - **Output epic path**: `{epic_file_path}`
 
 ## Your Goal
 
 Create a high-quality epic YAML file that:
+
 1. Captures ALL requirements from the spec
-2. Extracts coordination essentials (function profiles, integration contracts, etc.)
+2. Extracts coordination essentials (function profiles, integration contracts,
+   etc.)
 3. Filters out implementation noise (pseudo-code, brainstorming, speculation)
 4. Breaks work into testable, deployable tickets
 5. Defines clear dependencies enabling parallel execution
 
 ## Critical Context
 
-**Specs are UNSTRUCTURED by design.** Do not assume sections, headings, or format. Your job is to understand CONTENT, not parse STRUCTURE.
+**Specs are UNSTRUCTURED by design.** Do not assume sections, headings, or
+format. Your job is to understand CONTENT, not parse STRUCTURE.
 
 **Multi-turn approach required.** You will iterate through phases:
+
 1. Analysis & Understanding
 2. Initial Draft
 3. Self-Review & Refinement
@@ -36,16 +42,20 @@ Create a high-quality epic YAML file that:
 ## Reference Documents
 
 Before starting, read these documents to understand the standards and structure:
-- **Ticket Standards**: Read `~/.claude/standards/ticket-standards.md` - What makes a good ticket (quality standards)
+
+- **Ticket Standards**: Read `~/.claude/standards/ticket-standards.md` - What
+  makes a good ticket (quality standards)
 - **Epic Schema**: Reference the schema structure below for YAML format
 - **Transformation Rules**: Follow the transformation guidelines below
-- **Ticket Quality Standards**: Each ticket description must meet the standards from ticket-standards.md
+- **Ticket Quality Standards**: Each ticket description must meet the standards
+  from ticket-standards.md
 
 ## Phase 1: Analysis & Understanding
 
 ### Step 1.1: Read the Spec Holistically
 
 Read the entire spec from `{spec_file_path}`. As you read:
+
 - Note all features/requirements mentioned
 - Identify architectural decisions (tech stack, patterns, constraints)
 - Spot integration points between components
@@ -58,37 +68,44 @@ Read the entire spec from `{spec_file_path}`. As you read:
 Build your coordination requirements map:
 
 **Function Profiles**:
+
 - What functions/methods are specified?
 - What are their parameter counts (arity)?
 - What's their intent (1-2 sentences)?
 - What are their signatures?
 
 **Directory Structure**:
+
 - What directory paths are specified?
 - What file naming conventions exist?
 - Where do shared resources live?
 
 **Integration Contracts**:
+
 - How do components integrate?
 - What APIs does each component provide?
 - What does each component consume?
 
 **Architectural Decisions**:
+
 - What tech stack is locked in?
 - What patterns must be followed?
 - What constraints exist?
 
 **Breaking Changes**:
+
 - What existing APIs must remain unchanged?
 - What schemas can't be modified?
 
 **Performance/Security**:
+
 - What are the numeric performance bounds?
 - What security constraints exist?
 
 ### Step 1.3: Build Mental Model
 
 Answer these questions:
+
 - What's the core value proposition?
 - What are the major subsystems?
 - What are the integration boundaries?
@@ -97,13 +114,16 @@ Answer these questions:
 ### Output Phase 1
 
 Document in your response:
+
 ```markdown
 ## Phase 1: Analysis Complete
 
 ### Requirements Found
+
 - [List all requirements identified]
 
 ### Coordination Essentials
+
 - Function Profiles: [summary]
 - Directory Structure: [summary]
 - Integration Contracts: [summary]
@@ -111,6 +131,7 @@ Document in your response:
 - Performance/Security: [summary]
 
 ### Mental Model
+
 - Core Value: [...]
 - Major Subsystems: [...]
 - Integration Boundaries: [...]
@@ -123,6 +144,7 @@ Document in your response:
 ### Step 2.1: Draft Epic Metadata
 
 Create:
+
 - **Epic title**: Core objective only (not implementation)
 - **Description**: Coordination purpose (2-4 sentences)
 - **Acceptance criteria**: 3-7 concrete, measurable criteria
@@ -180,6 +202,7 @@ coordination_requirements:
 For each logical work unit, create a ticket:
 
 **Ticket Structure**:
+
 ```yaml
 - id: kebab-case-id
   description: |
@@ -199,6 +222,7 @@ For each logical work unit, create a ticket:
 ```
 
 **Ticket Creation Guidelines**:
+
 - Each ticket = testable, deployable unit
 - Vertical slicing preferred (user/developer/system value)
 - Smallest viable size while still being testable
@@ -206,9 +230,12 @@ For each logical work unit, create a ticket:
 
 **CRITICAL: Function Examples in Paragraph 2**
 
-To prevent the builder LLM from creating parallel implementations (e.g., creating `src/` when codebase uses `utils/`), **ALWAYS include concrete function examples** in the Technical Approach paragraph:
+To prevent the builder LLM from creating parallel implementations (e.g.,
+creating `src/` when codebase uses `utils/`), **ALWAYS include concrete function
+examples** in the Technical Approach paragraph:
 
 Format:
+
 ```
 Key functions to implement:
 - function_name(param1: type, param2: type) -> return_type: Brief intent (1-2 sentences)
@@ -216,6 +243,7 @@ Key functions to implement:
 ```
 
 Example:
+
 ```
 This ticket creates the GitOperations wrapper. Key functions:
 - create_branch(branch_name: str, base_commit: str): Creates git branch from specified commit using subprocess git commands
@@ -224,12 +252,14 @@ This ticket creates the GitOperations wrapper. Key functions:
 ```
 
 **What to include**:
+
 - ✅ Function name exactly as it should be implemented
 - ✅ Parameter names and types (arity)
 - ✅ Return type
 - ✅ 1-2 sentence intent describing what it does
 
 **What to exclude**:
+
 - ❌ Full implementation / pseudo-code
 - ❌ Algorithm details
 - ❌ Internal helper functions (only public API)
@@ -245,29 +275,35 @@ This ticket creates the GitOperations wrapper. Key functions:
 ### Output Phase 2
 
 Document in your response:
+
 ```markdown
 ## Phase 2: Initial Draft Complete
 
 ### Epic Metadata
+
 - Title: [...]
 - Description: [...]
 - Acceptance Criteria: [count] criteria
 
 ### Coordination Requirements
+
 - Function profiles: [count] functions
 - Directory paths: [count] paths
 - Integration contracts: [count] contracts
 
 ### Tickets
+
 - Total: [count]
 - Critical: [count]
 - Dependencies: [summary of dep structure]
 
 ### Initial Dependency Graph
+
 [Text visualization showing ticket dependencies]
 ```
 
-**Then show the draft YAML structure** (abbreviated, don't need full tickets yet)
+**Then show the draft YAML structure** (abbreviated, don't need full tickets
+yet)
 
 ---
 
@@ -278,6 +314,7 @@ Now systematically review and improve your draft.
 ### Review 3.1: Completeness Check
 
 Go through the spec requirement by requirement:
+
 - Is each requirement covered by at least one ticket?
 - Are there any gaps?
 
@@ -286,6 +323,7 @@ Go through the spec requirement by requirement:
 ### Review 3.2: Ticket Quality Check
 
 For each ticket, verify:
+
 - ✅ Description is 3-5 paragraphs (150-300 words)
 - ✅ Includes user story (who benefits, why)
 - ✅ Specific acceptance criteria (measurable, testable)
@@ -300,12 +338,14 @@ For each ticket, verify:
 Check each ticket for proper sizing:
 
 **Too Large?**
+
 - Touches multiple subsystems independently
 - Takes multiple days
 - Blocks many other tickets
 - Hard to write specific acceptance criteria
 
 **Too Small?**
+
 - Can't deploy independently
 - No testable value add
 - Just refactoring/organization
@@ -316,6 +356,7 @@ Check each ticket for proper sizing:
 ### Review 3.4: Dependency Check
 
 Check for:
+
 - ❌ Circular dependencies (A → B → A)
 - ❌ Unnecessary dependencies (B doesn't need A)
 - ❌ Missing dependencies (C uses D's API but doesn't list it)
@@ -326,6 +367,7 @@ Check for:
 ### Review 3.5: Coordination Check
 
 For each ticket, verify:
+
 - What interfaces does it provide? (clear?)
 - What interfaces does it consume? (clear?)
 - Are function signatures specified?
@@ -336,6 +378,7 @@ For each ticket, verify:
 ### Review 3.6: Critical Path Check
 
 Verify critical flags:
+
 - Critical = true: Core functionality, infrastructure, integration points
 - Critical = false: Nice-to-have, optimizations, enhancements
 
@@ -344,24 +387,21 @@ Verify critical flags:
 ### Review 3.7: Parallelism Check
 
 Identify parallelism opportunities:
+
 - Which tickets can run in parallel (same layer, no coordination needed)?
 - Are there false dependencies limiting parallelism?
 
 **Action**: Remove false dependencies, restructure for parallel execution.
 
-### Review 3.8: Independent Expert Review
-
-Once you have finished creating the epic file, use the epic-reviewer agent to review your work. Provide the agent with your complete draft epic YAML (all sections, all tickets) and ask for thorough feedback on quality, dependencies, coordination, and any improvements.
-
-After receiving the review agent's feedback, implement the necessary improvements to your epic draft. Document what changes you made based on the review before moving to Phase 4.
-
 ### Output Phase 3
 
 Document in your response:
+
 ```markdown
 ## Phase 3: Self-Review Complete
 
 ### Changes Made
+
 - Completeness: [tickets added/updated]
 - Quality: [tickets improved]
 - Granularity: [tickets split/combined]
@@ -371,12 +411,14 @@ Document in your response:
 - Parallelism: [opportunities identified]
 
 ### Refined Stats
+
 - Total tickets: [count]
 - Critical tickets: [count]
 - Average description length: [words]
 - Max parallel tickets: [count] (Wave 1)
 
 ### Refined Dependency Graph
+
 [Text visualization of improved dependencies]
 ```
 
@@ -387,10 +429,13 @@ Document in your response:
 ### Step 4.1: Final Validation
 
 Run through checklist:
+
 - [ ] Every spec requirement mapped to ticket(s)
-- [ ] Every ticket meets quality standards (3-5 paragraphs, acceptance criteria, testing)
+- [ ] Every ticket meets quality standards (3-5 paragraphs, acceptance criteria,
+      testing)
 - [ ] No circular dependencies
-- [ ] All tickets have coordination context (function profiles, integration contracts)
+- [ ] All tickets have coordination context (function profiles, integration
+      contracts)
 - [ ] Critical path identified
 - [ ] Parallel opportunities documented
 - [ ] YAML structure valid
@@ -433,13 +478,16 @@ Create a comprehensive report:
 ## Epic Creation Report
 
 ### Generated File
+
 - **Path**: {epic_file_path}
 - **Tickets**: [count]
 - **Critical**: [count]
 
 ### Dependency Graph
 ```
+
 [Text visualization showing all tickets and dependencies]
+
 ```
 
 ### Parallelism Opportunities
@@ -485,29 +533,43 @@ Implementation noise excluded from epic:
 ## Key Principles (Review Before Starting)
 
 ### Coordination Over Implementation
-- **INCLUDE**: Function signatures with examples, parameter counts, integration contracts, directory structures, function intent descriptions
-- **EXCLUDE**: Pseudo-code, full implementations, algorithm details, step-by-step instructions, "how we might" discussions
+
+- **INCLUDE**: Function signatures with examples, parameter counts, integration
+  contracts, directory structures, function intent descriptions
+- **EXCLUDE**: Pseudo-code, full implementations, algorithm details,
+  step-by-step instructions, "how we might" discussions
 
 **Key Distinction**:
-- ✅ GOOD: `create_branch(name: str, base: str): Creates branch from commit using git subprocess`
-- ❌ BAD: `create_branch() { run git checkout -b $name $base; if error then... }` (pseudo-code)
+
+- ✅ GOOD:
+  `create_branch(name: str, base: str): Creates branch from commit using git subprocess`
+- ❌ BAD:
+  `create_branch() { run git checkout -b $name $base; if error then... }`
+  (pseudo-code)
 
 ### Specific Over Vague
+
 - **GOOD**: "< 200ms response time", "10,000+ concurrent users"
 - **BAD**: "Fast performance", "High scalability"
 
 ### Testable Over Aspirational
+
 - **GOOD**: "Users authenticate via POST /api/auth/login endpoint"
 - **BAD**: "Authentication works well"
 
 ### Filter Ruthlessly
-- **EXCLUDE**: Brainstorming, planning discussions, alternatives considered, early iterations
-- **INCLUDE**: Firm decisions, architectural choices, integration requirements, constraints
+
+- **EXCLUDE**: Brainstorming, planning discussions, alternatives considered,
+  early iterations
+- **INCLUDE**: Firm decisions, architectural choices, integration requirements,
+  constraints
 
 ### Ticket Quality Standards
 
 Each ticket must pass:
-1. **Deployability Test**: "If I deployed only this, would it add value without breaking things?"
+
+1. **Deployability Test**: "If I deployed only this, would it add value without
+   breaking things?"
 2. **Single Responsibility**: Does one thing well
 3. **Self-Contained**: All info needed to complete work
 4. **Smallest Deliverable Value**: Atomic unit deployable independently
@@ -520,11 +582,13 @@ Each ticket must pass:
 **Question**: Should you spawn sub-agents for any part of this work?
 
 **Consider sub-agents for**:
+
 - Reading extremely large specs (> 2k lines)
 - Validating complex dependency graphs
 - Generating ticket descriptions in parallel
 
 **Do NOT use sub-agents for**:
+
 - The core analysis/drafting/review work (you should do this)
 - Writing the final YAML (you should do this)
 
@@ -536,4 +600,5 @@ Each ticket must pass:
 
 Start with Phase 1. Read the spec at `{spec_file_path}` and begin your analysis.
 
-Remember: **Show your work at each phase.** Document your reasoning, decisions, and refinements.
+Remember: **Show your work at each phase.** Document your reasoning, decisions,
+and refinements.
