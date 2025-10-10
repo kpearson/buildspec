@@ -8,9 +8,17 @@ Review all files in an epic directory for quality, consistency, and execution re
 /epic-review <epic-file-path>
 ```
 
+## Task
+
+Your developer wrote up this epic plan. Review all files in the epic directory and subdirectories.
+
+**Give feedback on it - high-level and down to the nitty-gritty.**
+
+How can we improve it? Are there any big architectural changes we should make?
+
 ## Description
 
-This command performs a comprehensive review of ALL files in the epic directory (epic YAML, tickets, and any other generated files) to validate the epic is ready for execution. It identifies quality issues, missing information, inconsistencies, and architectural problems. It provides high-level strategic feedback and nitty-gritty implementation details.
+This command performs a comprehensive review of ALL files in the epic directory (epic YAML, tickets, and any other generated files) to validate the epic is ready for execution. It identifies quality issues, missing information, inconsistencies, and architectural problems.
 
 **Scope**: Reviews everything in `.epics/[epic-name]/` except the `*-spec.md` file.
 
