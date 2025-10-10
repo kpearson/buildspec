@@ -24,9 +24,9 @@ def _add_session_ids_to_review(
     Add or update session IDs in the YAML frontmatter of the review artifact.
 
     Args:
-        review_artifact: Path to tickets-review.md file
+        review_artifact: Path to epic-review.md file
         builder_session_id: Session ID of the ticket builder
-        reviewer_session_id: Session ID of the ticket reviewer
+        reviewer_session_id: Session ID of the epic reviewer
     """
     content = review_artifact.read_text()
 
@@ -69,14 +69,14 @@ reviewer_session_id: {reviewer_session_id}
 
     # Write updated content
     review_artifact.write_text(updated_content)
-    logger.info(f"Added session IDs to tickets review artifact: {review_artifact}")
+    logger.info(f"Added session IDs to epic review artifact: {review_artifact}")
 
 
-def invoke_tickets_review(
+def invoke_epic_review(
     epic_file_path: Path, builder_session_id: str, context: ProjectContext
 ) -> Optional[str]:
     """
-    Invoke tickets-review command on the newly created tickets.
+    Invoke epic-review command on all files in the epic directory.
 
     Args:
         epic_file_path: Path to the epic YAML file
@@ -86,15 +86,15 @@ def invoke_tickets_review(
     Returns:
         Path to review artifact file, or None if review failed
     """
-    console.print("\n[blue]🔍 Invoking tickets review...[/blue]")
+    console.print("\n[blue]🔍 Invoking epic review...[/blue]")
 
     # Ensure artifacts directory exists
     epic_dir = epic_file_path.parent
     artifacts_dir = epic_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build tickets review prompt using SlashCommand
-    review_prompt = f"/tickets-review {epic_file_path}"
+    # Build epic review prompt using SlashCommand
+    review_prompt = f"/epic-review {epic_file_path}"
 
     # Execute tickets review in new Claude session
     runner = ClaudeRunner(context)
@@ -104,12 +104,12 @@ def invoke_tickets_review(
 
     if review_exit_code != 0:
         console.print(
-            "[yellow]⚠ Tickets review failed, skipping review feedback[/yellow]"
+            "[yellow]⚠ Epic review failed, skipping review feedback[/yellow]"
         )
         return None
 
     # Check for review artifact
-    review_artifact = artifacts_dir / "tickets-review.md"
+    review_artifact = artifacts_dir / "epic-review.md"
 
     if not review_artifact.exists():
         console.print(
@@ -174,9 +174,9 @@ def command(
             console.print("\n[green]✓ Tickets created successfully[/green]")
             console.print(f"[dim]Session ID: {session_id}[/dim]")
 
-            # Invoke tickets review workflow
+            # Invoke epic review workflow
             try:
-                review_artifact = invoke_tickets_review(
+                review_artifact = invoke_epic_review(
                     epic_file_path, session_id, context
                 )
 
@@ -184,7 +184,7 @@ def command(
                     console.print(f"[dim]Review saved to: {review_artifact}[/dim]")
             except Exception as e:
                 console.print(
-                    f"[yellow]Warning: Could not complete tickets review: {e}[/yellow]"
+                    f"[yellow]Warning: Could not complete epic review: {e}[/yellow]"
                 )
                 # Continue - don't fail ticket creation on review error
         else:

@@ -340,7 +340,7 @@ def _add_session_ids_to_review(
     Add or update session IDs in the YAML frontmatter of the review artifact.
 
     Args:
-        review_artifact: Path to epic-review.md file
+        review_artifact: Path to epic-file-review.md file
         builder_session_id: Session ID of the epic builder
         reviewer_session_id: Session ID of the epic reviewer
     """
@@ -415,11 +415,11 @@ reviewer_session_id: {reviewer_session_id}
     logger.info(f"Added session IDs to review artifact: {review_artifact}")
 
 
-def invoke_epic_review(
+def invoke_epic_file_review(
     epic_path: str, builder_session_id: str, context: ProjectContext
 ) -> Optional[str]:
     """
-    Invoke epic-review command on the newly created epic.
+    Invoke epic-file-review command on the newly created epic YAML file.
 
     Args:
         epic_path: Path to the epic YAML file to review
@@ -429,15 +429,15 @@ def invoke_epic_review(
     Returns:
         Path to review artifact file, or None if review failed
     """
-    console.print("\n[blue]🔍 Invoking epic review...[/blue]")
+    console.print("\n[blue]🔍 Invoking epic file review...[/blue]")
 
     # Ensure artifacts directory exists
     artifacts_dir = Path(epic_path).parent / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build epic review prompt using SlashCommand
+    # Build epic file review prompt using SlashCommand
     epic_name = Path(epic_path).stem.replace(".epic", "")
-    review_prompt = f"/epic-review {epic_path}"
+    review_prompt = f"/epic-file-review {epic_path}"
 
     # Execute epic review in new Claude session
     runner = ClaudeRunner(context)
@@ -453,7 +453,7 @@ def invoke_epic_review(
 
     # Check for review artifact
     artifacts_dir = Path(epic_path).parent / "artifacts"
-    review_artifact = artifacts_dir / "epic-review.md"
+    review_artifact = artifacts_dir / "epic-file-review.md"
 
     if not review_artifact.exists():
         console.print(
@@ -477,7 +477,7 @@ def apply_review_feedback(
     Resume builder Claude session to apply review feedback to epic file.
 
     Args:
-        review_artifact: Path to epic-review.md artifact
+        review_artifact: Path to epic-file-review.md artifact
         epic_path: Path to the epic YAML file to improve
         builder_session_id: Session ID of original epic builder to resume
         context: Project context for execution
@@ -794,7 +794,7 @@ def command(
             if epic_path and epic_path.exists():
                 try:
                     # Step 1: Review the epic
-                    review_artifact = invoke_epic_review(
+                    review_artifact = invoke_epic_file_review(
                         str(epic_path), session_id, context
                     )
 
