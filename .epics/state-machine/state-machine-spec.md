@@ -1,5 +1,66 @@
 # Epic: Python State Machine Enforcement for Epic Execution
 
+## Progress and Status
+
+**Last Updated**: 2025-10-11 **Status**: Specification Complete - Ready for
+Ticket Generation
+
+### Recent Changes (2025-10-11)
+
+#### Architectural Pivot: LLM Orchestrator → Python-Driven Execution
+
+**Context**: During spec review, identified that using an LLM to orchestrate the
+execution loop was overengineering. The orchestration logic is purely procedural
+(get tickets, execute, check dependencies, finalize) - exactly what code does
+best, not LLMs.
+
+**Changes Applied**:
+
+1. **Removed LLM orchestrator** from architecture
+   - Deleted ~190 lines of LLM orchestrator interface documentation
+   - Deleted CLI subcommands (epic status, start-ticket, complete-ticket, etc.)
+   - Removed API documentation for orchestrator
+
+2. **Added self-driving state machine pattern**
+   - Single entry point: `buildspec execute-epic <epic-file>`
+   - EpicStateMachine.execute() method drives entire workflow
+   - All coordination methods are now private (internal API only)
+   - Added \_get_ready_tickets(), \_execute_ticket(), \_all_tickets_completed(),
+     \_has_active_tickets()
+
+3. **Added ClaudeTicketBuilder subprocess specification**
+   - Replaced LLM orchestrator with subprocess spawning
+   - ClaudeTicketBuilder spawns Claude Code for individual tickets
+   - Structured JSON output for validation
+   - Clear prompt template for ticket implementation
+
+4. **Updated implementation strategy**
+   - Phase 1: Core state machine (models, gates, git operations)
+   - Phase 2: Claude builder integration (subprocess, prompt templates)
+   - Phase 3: Validation gates
+   - Phase 4: Finalization and merge logic
+   - Phase 5: Error recovery
+   - Phase 6: Integration tests
+
+**Result**: Architecture is now much simpler (~50 lines of execution logic vs
+500-line LLM orchestrator). Python code owns all procedural logic, Claude only
+does creative work (implementing tickets).
+
+### Current State
+
+- ✅ Spec completed and updated with Python-driven architecture
+- ✅ Applied Priority 1-4 review feedback from epic-file-review to epic YAML
+  coordination section
+- ⏸️ Ready for ticket generation via `buildspec create-tickets`
+
+### Next Steps
+
+1. Generate tickets from this spec:
+   `buildspec create-tickets state-machine-spec.md`
+2. Review tickets for consistency and completeness
+3. Begin Phase 1 implementation: Core state machine
+4. Add unit tests as we implement each phase
+
 ## Epic Summary
 
 Replace LLM-driven coordination with a Python state machine that enforces
@@ -70,40 +131,53 @@ handles problems**.
 
 ## Architecture Overview
 
-### Core Principle: State Machine as Gatekeeper
+### Core Principle: Python-Driven State Machine
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  execute-epic CLI Command (Python)                      │
+│  buildspec execute-epic <epic-file> (CLI Command)      │
+│                                                         │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │  EpicStateMachine                                 │  │
-│  │  - Owns epic-state.json                           │  │
-│  │  - Enforces all state transitions                 │  │
-│  │  - Performs git operations                        │  │
-│  │  - Validates LLM output against gates             │  │
-│  └───────────────────────────────────────────────────┘  │
-│                        ▲                                │
-│                        │ API calls only                 │
-│                        ▼                                │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │  LLM Orchestrator Agent                           │  │
-│  │  - Reads ticket requirements                      │  │
-│  │  - Spawns ticket-builder sub-agents               │  │
-│  │  - Calls state machine to advance states          │  │
-│  │  - NO direct state file access                    │  │
+│  │  EpicStateMachine.execute()                       │  │
+│  │  (Self-driving Python code)                       │  │
+│  │                                                    │  │
+│  │  Execution Loop:                                  │  │
+│  │  1. Get ready tickets (check dependencies)       │  │
+│  │  2. For each ticket:                              │  │
+│  │     - Create branch (calculate base commit)      │  │
+│  │     - Spawn Claude builder agent                 │  │
+│  │     - Validate completion (run gates)            │  │
+│  │     - Update state                               │  │
+│  │  3. Finalize (collapse branches, merge)          │  │
+│  │                                                    │  │
+│  │  State Machine Contains:                          │  │
+│  │  - State tracking (epic-state.json)              │  │
+│  │  - Transition gates (validation logic)           │  │
+│  │  - Git operations (branch, merge, push)          │  │
+│  │  - Claude builder spawning (subprocess)          │  │
 │  └───────────────────────────────────────────────────┘  │
 │                        │                                │
-│                        │ Task tool spawns               │
+│                        │ Spawns (subprocess)            │
 │                        ▼                                │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │  Ticket-Builder Sub-Agents (LLMs)                 │  │
-│  │  - Implement ticket requirements                  │  │
-│  │  - Create commits on assigned branch              │  │
-│  │  - Report completion with artifacts               │  │
-│  │  - NO state machine interaction                   │  │
+│  │  Claude Builder Agent (Per-Ticket)                │  │
+│  │  - Checkout branch                                │  │
+│  │  - Read ticket requirements                       │  │
+│  │  - Implement code                                 │  │
+│  │  - Run tests                                      │  │
+│  │  - Commit and push                                │  │
+│  │  - Return: final commit SHA, test status, etc.   │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Key Differences from Current Architecture:**
+
+- **No LLM orchestrator**: Python code drives the execution loop
+- **No CLI subcommands**: Single `execute-epic` command that runs end-to-end
+- **Internal API**: State machine methods are private (not exposed via CLI)
+- **Direct subprocess calls**: Python spawns Claude builders directly
+- **Simpler**: ~50 lines of execution logic vs 500-line LLM orchestrator
 
 ### Git Strategy: True Stacked Branches with Final Collapse
 
@@ -502,10 +576,10 @@ class GitInfo:
 
 class EpicStateMachine:
     """
-    Core state machine that enforces epic execution rules.
+    Self-driving state machine that executes epics autonomously.
 
-    LLM orchestrator interacts with this via public API methods only.
-    State file is private to the state machine.
+    Contains both state tracking and execution logic.
+    All methods are internal - no external API needed.
     """
 
     def __init__(self, epic_file: Path, resume: bool = False):
@@ -518,17 +592,66 @@ class EpicStateMachine:
         else:
             self._initialize_new_epic()
 
-    # === Public API for LLM Orchestrator ===
+    # === Public API (Single Entry Point) ===
 
-    def get_ready_tickets(self) -> List[Ticket]:
+    def execute(self):
         """
-        Returns tickets that can be started (dependencies met, slots available)
+        Main execution loop - drives epic to completion autonomously.
 
-        State machine handles:
-        - Dependency checking
-        - Concurrency limits
-        - State transitions from PENDING → READY
+        This is the ONLY public method. Everything else is internal.
+
+        Process:
+        Phase 1: Execute all tickets synchronously
+          - Get ready tickets (dependencies met)
+          - For each ticket:
+            - Create branch from correct base commit
+            - Spawn Claude builder subprocess
+            - Wait for completion
+            - Validate work via gates
+            - Transition states
+        Phase 2: Finalize epic
+          - Collapse all ticket branches into epic branch
+          - Push to remote
+
+        Returns when epic is FINALIZED or FAILED.
         """
+        console.print(f"[blue]Starting epic execution: {self.epic_id}[/blue]")
+
+        # Phase 1: Execute all tickets
+        while not self._all_tickets_completed():
+            ready_tickets = self._get_ready_tickets()
+
+            if not ready_tickets:
+                # No ready tickets - check if we're stuck
+                if self._has_active_tickets():
+                    continue  # Waiting for in-progress ticket
+                else:
+                    break  # All done or blocked
+
+            # Synchronous execution: one ticket at a time
+            ticket = ready_tickets[0]
+            console.print(f"\n[cyan]→ Starting ticket: {ticket.id}[/cyan]")
+
+            try:
+                self._execute_ticket(ticket)
+            except Exception as e:
+                console.print(f"[red]✗ Ticket {ticket.id} failed: {e}[/red]")
+                self._fail_ticket(ticket.id, str(e))
+
+        # Phase 2: Collapse branches
+        console.print("\n[blue]Phase 2: Finalizing epic (collapsing branches)...[/blue]")
+        result = self._finalize_epic()
+
+        if result["success"]:
+            console.print(f"[green]✓ Epic complete! Branch: {result['epic_branch']}[/green]")
+        else:
+            console.print(f"[red]✗ Epic finalization failed: {result['error']}[/red]")
+            raise EpicExecutionError(result["error"])
+
+    # === Internal Implementation ===
+
+    def _get_ready_tickets(self) -> List[Ticket]:
+        """Returns tickets ready to execute (dependencies met, no active work)."""
         ready_tickets = []
 
         for ticket in self.tickets.values():
@@ -542,7 +665,7 @@ class EpicStateMachine:
                     self._transition_ticket(ticket.id, TicketState.READY)
                     ready_tickets.append(ticket)
 
-        # Sort by priority
+        # Sort by priority (critical first, then by dependency depth)
         ready_tickets.sort(key=lambda t: (
             0 if t.critical else 1,
             -self._calculate_dependency_depth(t)
@@ -550,21 +673,51 @@ class EpicStateMachine:
 
         return ready_tickets
 
-    def start_ticket(self, ticket_id: str) -> Dict[str, Any]:
+    def _execute_ticket(self, ticket: Ticket):
         """
-        Prepare ticket for LLM execution.
+        Execute single ticket: create branch, spawn builder, validate, update state.
 
-        State machine handles:
-        - Branch creation from correct base commit
-        - State transitions: READY → BRANCH_CREATED → IN_PROGRESS
-        - Git operations
+        This is the core execution logic for one ticket.
+        """
+        # Step 1: Create branch and transition to IN_PROGRESS
+        start_info = self._start_ticket(ticket.id)
 
-        Returns:
-            {
-                "branch_name": "ticket/auth-base",
-                "base_commit": "abc123",
-                "working_directory": "/path/to/worktree" (optional)
-            }
+        # Step 2: Spawn Claude builder subprocess
+        console.print(f"  [dim]Branch: {start_info['branch_name']}[/dim]")
+        console.print(f"  [dim]Base: {start_info['base_commit'][:8]}[/dim]")
+
+        builder = ClaudeTicketBuilder(
+            ticket_file=start_info["ticket_file"],
+            branch_name=start_info["branch_name"],
+            base_commit=start_info["base_commit"],
+            epic_file=self.epic_file
+        )
+
+        result = builder.execute()  # Blocks until builder completes
+
+        # Step 3: Process result
+        if result.success:
+            console.print(f"  [green]Builder completed[/green]")
+            success = self._complete_ticket(
+                ticket.id,
+                final_commit=result.final_commit,
+                test_status=result.test_status,
+                acceptance_criteria=result.acceptance_criteria
+            )
+
+            if success:
+                console.print(f"[green]✓ Ticket {ticket.id} completed[/green]")
+            else:
+                console.print(f"[red]✗ Ticket {ticket.id} validation failed[/red]")
+        else:
+            console.print(f"[red]✗ Builder failed: {result.error}[/red]")
+            self._fail_ticket(ticket.id, result.error)
+
+    def _start_ticket(self, ticket_id: str) -> Dict[str, Any]:
+        """
+        Create branch and transition ticket to IN_PROGRESS.
+
+        Returns dict with branch info for Claude builder.
         """
         ticket = self.tickets[ticket_id]
 
@@ -595,24 +748,17 @@ class EpicStateMachine:
             "epic_file": str(self.epic_file)
         }
 
-    def complete_ticket(
+    def _complete_ticket(
         self,
         ticket_id: str,
         final_commit: str,
-        test_suite_status: str,
+        test_status: str,
         acceptance_criteria: List[Dict[str, Any]]
     ) -> bool:
         """
-        LLM reports ticket completion. State machine validates.
+        Validate ticket work and transition to COMPLETED or FAILED.
 
-        State machine handles:
-        - Validation gates (branch exists, tests pass, etc.)
-        - State transitions: IN_PROGRESS → AWAITING_VALIDATION → COMPLETED
-        - NO MERGE - merging happens in finalize() after all tickets complete
-
-        Returns:
-            True if validation passed and ticket marked COMPLETED
-            False if validation failed (ticket state = FAILED)
+        Returns True if validation passed, False otherwise.
         """
         ticket = self.tickets[ticket_id]
 
@@ -623,7 +769,7 @@ class EpicStateMachine:
 
         # Update ticket with completion info
         ticket.git_info.final_commit = final_commit
-        ticket.test_suite_status = test_suite_status
+        ticket.test_suite_status = test_status
         ticket.acceptance_criteria = [
             AcceptanceCriterion(**ac) for ac in acceptance_criteria
         ]
@@ -647,7 +793,7 @@ class EpicStateMachine:
 
         return True
 
-    def finalize_epic(self) -> Dict[str, Any]:
+    def _finalize_epic(self) -> Dict[str, Any]:
         """
         Collapse all ticket branches into epic branch and push.
 
@@ -736,42 +882,28 @@ class EpicStateMachine:
             "pushed": True
         }
 
-    def fail_ticket(self, ticket_id: str, reason: str):
-        """LLM reports ticket cannot be completed"""
+    def _fail_ticket(self, ticket_id: str, reason: str):
+        """Mark ticket as failed and handle cascading effects."""
         ticket = self.tickets[ticket_id]
         ticket.failure_reason = reason
         self._transition_ticket(ticket_id, TicketState.FAILED)
         self._handle_ticket_failure(ticket)
 
-    def get_epic_status(self) -> Dict[str, Any]:
-        """Get current epic execution status"""
-        return {
-            "epic_state": self.epic_state.name,
-            "tickets": {
-                ticket_id: {
-                    "state": ticket.state.name,
-                    "critical": ticket.critical,
-                    "git_info": ticket.git_info.__dict__ if ticket.git_info else None
-                }
-                for ticket_id, ticket in self.tickets.items()
-            },
-            "stats": {
-                "total": len(self.tickets),
-                "completed": self._count_tickets_in_state(TicketState.COMPLETED),
-                "in_progress": self._count_tickets_in_state(TicketState.IN_PROGRESS),
-                "failed": self._count_tickets_in_state(TicketState.FAILED),
-                "blocked": self._count_tickets_in_state(TicketState.BLOCKED)
-            }
-        }
-
-    def all_tickets_completed(self) -> bool:
-        """Check if all non-blocked/failed tickets are complete"""
+    def _all_tickets_completed(self) -> bool:
+        """Check if all non-blocked/failed tickets are complete."""
         return all(
             t.state in [TicketState.COMPLETED, TicketState.BLOCKED, TicketState.FAILED]
             for t in self.tickets.values()
         )
 
-    # === Private State Machine Implementation ===
+    def _has_active_tickets(self) -> bool:
+        """Check if any tickets are currently being worked on."""
+        return any(
+            t.state in [TicketState.IN_PROGRESS, TicketState.AWAITING_VALIDATION]
+            for t in self.tickets.values()
+        )
+
+    # === State Machine Internal Implementation ===
 
     def _transition_ticket(self, ticket_id: str, new_state: TicketState):
         """
@@ -880,342 +1012,349 @@ class EpicStateMachine:
         )
 ```
 
-### LLM Orchestrator Interface
+### ClaudeTicketBuilder Subprocess
 
-The LLM orchestrator (execute-epic.md) receives simplified instructions:
+The state machine spawns Claude builder agents as subprocesses for individual
+ticket implementation. Each builder is isolated and focused solely on
+implementing one ticket.
 
-````markdown
-# Execute Epic Orchestrator Instructions
+````python
+# buildspec/epic/claude_builder.py
 
-You are the epic orchestrator. Your job is to coordinate ticket execution using
-the state machine API.
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, List, Dict, Any
 
-## Your Responsibilities
+@dataclass
+class BuilderResult:
+    """Result from Claude ticket builder subprocess"""
+    success: bool
+    final_commit: Optional[str] = None
+    test_status: Optional[str] = None  # "passing", "failing", "skipped"
+    acceptance_criteria: List[Dict[str, Any]] = None
+    error: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
 
-1. **Read the epic file** to understand all tickets
-2. **Call state machine API** to get ready tickets
-3. **Spawn LLM sub-agents** for ready tickets using Task tool
-4. **Report completion** back to state machine
-5. **Handle failures** by calling state machine failure API
+class ClaudeTicketBuilder:
+    """
+    Spawns Claude Code as subprocess to implement a ticket.
 
-## What You DO NOT Do
+    The builder runs in isolation with a specific prompt that instructs
+    Claude to:
+    1. Checkout the ticket branch
+    2. Read the ticket file
+    3. Implement requirements
+    4. Run tests
+    5. Commit and push
+    6. Report results via structured output
+    """
 
-- ❌ Create git branches (state machine does this)
-- ❌ Calculate base commits (state machine does this)
-- ❌ Merge tickets (state machine does this)
-- ❌ Update epic-state.json (state machine does this)
-- ❌ Validate ticket completion (state machine does this)
+    def __init__(
+        self,
+        ticket_file: Path,
+        branch_name: str,
+        base_commit: str,
+        epic_file: Path
+    ):
+        self.ticket_file = ticket_file
+        self.branch_name = branch_name
+        self.base_commit = base_commit
+        self.epic_file = epic_file
 
-## API Commands
+    def execute(self) -> BuilderResult:
+        """
+        Spawn Claude builder subprocess and wait for completion.
 
-### Get Ready Tickets
+        Returns BuilderResult with success/failure and metadata.
+        """
+        prompt = self._build_prompt()
 
-```bash
-buildspec epic status <epic-file> --ready
-```
-````
+        # Spawn Claude Code via CLI
+        cmd = [
+            "claude",
+            "--prompt", prompt,
+            "--mode", "execute-ticket",  # Special mode for ticket execution
+            "--output-json"  # Request structured output
+        ]
 
-Returns JSON:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3600  # 1 hour timeout
+            )
+
+            if result.returncode == 0:
+                # Parse structured output from Claude
+                output = self._parse_output(result.stdout)
+
+                return BuilderResult(
+                    success=True,
+                    final_commit=output.get("final_commit"),
+                    test_status=output.get("test_status"),
+                    acceptance_criteria=output.get("acceptance_criteria"),
+                    stdout=result.stdout
+                )
+            else:
+                return BuilderResult(
+                    success=False,
+                    error=f"Builder failed with exit code {result.returncode}",
+                    stderr=result.stderr
+                )
+
+        except subprocess.TimeoutExpired:
+            return BuilderResult(
+                success=False,
+                error="Builder timed out after 1 hour"
+            )
+        except Exception as e:
+            return BuilderResult(
+                success=False,
+                error=f"Builder subprocess error: {e}"
+            )
+
+    def _build_prompt(self) -> str:
+        """
+        Build prompt for Claude ticket builder.
+
+        Instructs Claude to implement the ticket and report results.
+        """
+        return f"""# Ticket Implementation Task
+
+You are implementing a single ticket in an epic execution workflow.
+
+## Your Task
+
+Implement the ticket described in: {self.ticket_file}
+
+## Context
+
+- **Branch**: {self.branch_name} (already created)
+- **Base commit**: {self.base_commit}
+- **Epic file**: {self.epic_file}
+
+## Workflow
+
+1. **Checkout branch**: `git checkout {self.branch_name}`
+2. **Read ticket**: Read {self.ticket_file} for requirements
+3. **Read epic YAML**: Read {self.epic_file} for coordination requirements
+4. **Implement**: Write code to satisfy ticket requirements
+5. **Test**: Run tests (follow testing requirements in ticket)
+6. **Commit**: Commit changes with descriptive message
+7. **Push**: Push branch to remote
+8. **Report**: Output structured JSON with results (see below)
+
+## Important Rules
+
+- ✅ **DO** follow the ticket description and acceptance criteria exactly
+- ✅ **DO** read the epic YAML for function signatures and coordination requirements
+- ✅ **DO** run tests before completing
+- ✅ **DO** commit frequently with clear messages
+- ✅ **DO** push the branch when done
+- ❌ **DO NOT** merge into epic branch (state machine handles merging)
+- ❌ **DO NOT** modify other tickets or files outside scope
+- ❌ **DO NOT** change the epic YAML file
+
+## Required Output
+
+When you're done, output a JSON object to stdout with this structure:
 
 ```json
-{
-  "ready_tickets": [
-    {
-      "id": "auth-base",
-      "title": "Set up base authentication",
-      "critical": true
-    }
+{{
+  "final_commit": "<git SHA of final commit>",
+  "test_status": "passing|failing|skipped",
+  "acceptance_criteria": [
+    {{"criterion": "...", "met": true}},
+    {{"criterion": "...", "met": true}}
   ]
-}
-```
+}}
+````
 
-### Start Ticket
+The state machine will parse this output to validate your work. """
 
-```bash
-buildspec epic start-ticket <epic-file> <ticket-id>
-```
+    def _parse_output(self, stdout: str) -> Dict[str, Any]:
+        """
+        Parse structured JSON output from Claude builder.
 
-Returns JSON:
+        Expected format:
+        {
+          "final_commit": "abc123",
+          "test_status": "passing",
+          "acceptance_criteria": [...]
+        }
+        """
+        import json
 
-```json
-{
-  "branch_name": "ticket/auth-base",
-  "base_commit": "abc123def",
-  "ticket_file": "/path/to/ticket.md",
-  "epic_file": "/path/to/epic.yaml"
-}
-```
+        # Find JSON block in output (Claude may include other text)
+        try:
+            # Look for JSON object
+            start = stdout.find("{")
+            end = stdout.rfind("}") + 1
 
-State machine creates branch automatically.
+            if start >= 0 and end > start:
+                json_str = stdout[start:end]
+                return json.loads(json_str)
+            else:
+                # No JSON found - return empty dict
+                return {}
 
-### Complete Ticket
-
-```bash
-buildspec epic complete-ticket <epic-file> <ticket-id> \
-  --final-commit <sha> \
-  --test-status passing \
-  --acceptance-criteria <json-file>
-```
-
-State machine validates (NO MERGE - merging happens in finalize step).
-
-Returns:
-
-```json
-{
-  "success": true,
-  "state": "COMPLETED"
-}
-```
-
-Or if validation fails:
-
-```json
-{
-  "success": false,
-  "reason": "Tests not passing",
-  "ticket_state": "FAILED"
-}
-```
-
-### Finalize Epic
-
-```bash
-buildspec epic finalize <epic-file>
-```
-
-Collapses all ticket branches into epic branch and pushes.
-
-Returns:
-
-```json
-{
-  "success": true,
-  "epic_branch": "epic/feature-name",
-  "merge_commits": ["sha1", "sha2", "sha3"],
-  "pushed": true
-}
-```
-
-### Fail Ticket
-
-```bash
-buildspec epic fail-ticket <epic-file> <ticket-id> --reason "Cannot resolve merge conflicts"
-```
-
-State machine handles blocking dependent tickets.
-
-## Execution Loop (Synchronous)
-
-```python
-# Phase 1: Execute all tickets synchronously
-while True:
-    # Get ready tickets from state machine
-    ready = call_api("epic status --ready")
-
-    if not ready["ready_tickets"]:
-        # Check if all tickets done
-        status = call_api("epic status")
-        if all_tickets_complete(status):
-            break
-        else:
-            # Waiting for dependencies or blocked
-            continue
-
-    # Synchronous execution: only 1 ticket at a time
-    ticket = ready["ready_tickets"][0]
-
-    # Start ticket (state machine creates branch)
-    start_info = call_api(f"epic start-ticket {ticket['id']}")
-
-    # Spawn LLM sub-agent (synchronously - wait for completion)
-    result = spawn_sub_agent_and_wait(
-        ticket_file=start_info["ticket_file"],
-        branch_name=start_info["branch_name"],
-        base_commit=start_info["base_commit"]
-    )
-
-    # Report result to state machine
-    if result.success:
-        call_api(f"epic complete-ticket {ticket['id']} ...")
-    else:
-        call_api(f"epic fail-ticket {ticket['id']} ...")
-
-# Phase 2: Collapse all ticket branches into epic branch
-finalize_result = call_api("epic finalize")
-
-if finalize_result["success"]:
-    print(f"Epic complete! Branch {finalize_result['epic_branch']} pushed to remote")
-else:
-    print(f"Epic finalization failed: {finalize_result['error']}")
-```
-
-## Sub-Agent Instructions
-
-Your sub-agents receive these parameters:
-
-- `ticket_file`: Path to ticket markdown
-- `branch_name`: Git branch to work on (already created)
-- `base_commit`: Base commit (for reference)
-
-Sub-agent must:
-
-1. Check out the branch
-2. Implement ticket requirements
-3. Commit changes
-4. Push branch
-5. Report final commit SHA and test status
+        except json.JSONDecodeError:
+            # Invalid JSON - return empty dict
+            return {}
 
 ````
 
-### CLI Implementation
+**Integration with State Machine:**
+
+The state machine's `_execute_ticket()` method (shown earlier) spawns the builder and processes the result:
 
 ```python
-# buildspec/cli/epic_commands.py
+def _execute_ticket(self, ticket: Ticket):
+    # ... (create branch, etc.)
 
-import click
-from buildspec.epic.state_machine import EpicStateMachine
-
-@click.group()
-def epic():
-    """Epic execution commands"""
-    pass
-
-@epic.command()
-@click.argument('epic_file', type=click.Path(exists=True))
-@click.option('--ready', is_flag=True, help='Show only ready tickets')
-def status(epic_file, ready):
-    """Get epic execution status"""
-    sm = EpicStateMachine(epic_file, resume=True)
-
-    if ready:
-        ready_tickets = sm.get_ready_tickets()
-        click.echo(json.dumps({
-            "ready_tickets": [
-                {"id": t.id, "title": t.title, "critical": t.critical}
-                for t in ready_tickets
-            ]
-        }, indent=2))
-    else:
-        status = sm.get_epic_status()
-        click.echo(json.dumps(status, indent=2))
-
-@epic.command()
-@click.argument('epic_file', type=click.Path(exists=True))
-@click.argument('ticket_id')
-def start_ticket(epic_file, ticket_id):
-    """Start ticket execution (creates branch)"""
-    sm = EpicStateMachine(epic_file, resume=True)
-
-    try:
-        result = sm.start_ticket(ticket_id)
-        click.echo(json.dumps(result, indent=2))
-    except StateTransitionError as e:
-        click.echo(json.dumps({"error": str(e)}), err=True)
-        sys.exit(1)
-
-@epic.command()
-@click.argument('epic_file', type=click.Path(exists=True))
-@click.argument('ticket_id')
-@click.option('--final-commit', required=True)
-@click.option('--test-status', required=True, type=click.Choice(['passing', 'failing', 'skipped']))
-@click.option('--acceptance-criteria', type=click.File('r'), required=True)
-def complete_ticket(epic_file, ticket_id, final_commit, test_status, acceptance_criteria):
-    """Complete ticket (validates and merges)"""
-    sm = EpicStateMachine(epic_file, resume=True)
-
-    ac_data = json.load(acceptance_criteria)
-
-    success = sm.complete_ticket(
-        ticket_id=ticket_id,
-        final_commit=final_commit,
-        test_suite_status=test_status,
-        acceptance_criteria=ac_data
+    # Spawn builder
+    builder = ClaudeTicketBuilder(
+        ticket_file=ticket.path,
+        branch_name=ticket.git_info.branch_name,
+        base_commit=ticket.git_info.base_commit,
+        epic_file=self.epic_file
     )
 
-    if success:
-        click.echo(json.dumps({"success": True, "state": "COMPLETED"}))
+    result = builder.execute()  # Blocks until complete
+
+    # Process result
+    if result.success:
+        self._complete_ticket(
+            ticket.id,
+            final_commit=result.final_commit,
+            test_status=result.test_status,
+            acceptance_criteria=result.acceptance_criteria
+        )
     else:
-        ticket = sm.tickets[ticket_id]
-        click.echo(json.dumps({
-            "success": False,
-            "reason": ticket.failure_reason,
-            "ticket_state": ticket.state.name
-        }), err=True)
-        sys.exit(1)
-
-@epic.command()
-@click.argument('epic_file', type=click.Path(exists=True))
-@click.argument('ticket_id')
-@click.option('--reason', required=True)
-def fail_ticket(epic_file, ticket_id, reason):
-    """Mark ticket as failed"""
-    sm = EpicStateMachine(epic_file, resume=True)
-    sm.fail_ticket(ticket_id, reason)
-    click.echo(json.dumps({"ticket_id": ticket_id, "state": "FAILED"}))
-
-@epic.command()
-@click.argument('epic_file', type=click.Path(exists=True))
-def finalize(epic_file):
-    """Finalize epic (collapse tickets, push epic branch)"""
-    sm = EpicStateMachine(epic_file, resume=True)
-
-    try:
-        result = sm.finalize_epic()
-        click.echo(json.dumps(result, indent=2))
-
-        if not result["success"]:
-            sys.exit(1)
-    except StateError as e:
-        click.echo(json.dumps({"error": str(e)}), err=True)
-        sys.exit(1)
+        self._fail_ticket(ticket.id, result.error)
 ````
 
 ## Implementation Strategy
 
 ### Phase 1: Core State Machine (Week 1)
 
-1. **State enums and data classes** (`buildspec/epic/models.py`)
-2. **Gate interface and base gates** (`buildspec/epic/gates.py`)
-3. **State machine core** (`buildspec/epic/state_machine.py`)
-4. **Git operations wrapper** (`buildspec/epic/git_operations.py`)
-5. **State file persistence** (atomic writes, JSON schema validation)
+1. **State enums and data classes** (`cli/epic/models.py`)
+   - TicketState, EpicState enums
+   - Ticket, GitInfo, AcceptanceCriterion dataclasses
+   - GateResult, BuilderResult dataclasses
 
-### Phase 2: CLI Commands (Week 1)
+2. **Git operations wrapper** (`cli/epic/git_operations.py`)
+   - Branch creation, merging, deletion
+   - Commit validation and ancestry checking
+   - Base commit calculation for stacking
 
-1. **Click commands** for epic status, start-ticket, complete-ticket,
-   fail-ticket
-2. **JSON input/output** for LLM consumption
-3. **Error handling** with clear messages
+3. **State machine core** (`cli/epic/state_machine.py`)
+   - EpicStateMachine class with execute() method
+   - Internal methods: \_get_ready_tickets(), \_execute_ticket(), etc.
+   - State file persistence (atomic writes, JSON schema)
+   - State transition tracking and validation
 
-### Phase 3: LLM Integration (Week 2)
+4. **Gate interface and implementations** (`cli/epic/gates.py`)
+   - TransitionGate protocol
+   - All gate implementations (DependenciesMetGate, CreateBranchGate,
+     ValidationGate, etc.)
 
-1. **Update execute-epic.md** with simplified orchestrator instructions
-2. **Update execute-ticket.md** with completion reporting requirements
-3. **Test orchestrator** calling state machine API
+### Phase 2: Claude Builder Integration (Week 1-2)
 
-### Phase 4: Validation Gates (Week 2)
+1. **ClaudeTicketBuilder class** (`cli/epic/claude_builder.py`)
+   - Subprocess spawning with proper prompt construction
+   - Structured output parsing (JSON)
+   - Timeout and error handling
+   - BuilderResult dataclass
+
+2. **Execute-epic CLI command** (`cli/commands/execute_epic.py`)
+   - Single entry point: `buildspec execute-epic <epic-file>`
+   - Creates EpicStateMachine instance
+   - Calls execute() method
+   - Displays progress and results
+
+3. **Ticket execution prompt template**
+   - Claude builder prompt in ClaudeTicketBuilder.\_build_prompt()
+   - Structured output requirements
+   - Clear rules and constraints
+
+### Phase 3: Validation Gates (Week 2)
 
 1. **Implement all transition gates**
-2. **Git validation** (branch exists, commit exists, merge conflicts)
-3. **Test validation** (optional: run tests in CI, or trust LLM report)
+   - DependenciesMetGate: Check dependencies are COMPLETED
+   - CreateBranchGate: Create branch from correct base commit
+   - LLMStartGate: Enforce synchronous execution
+   - ValidationGate: Comprehensive ticket validation
+
+2. **Git validation**
+   - Branch exists and is pushed
+   - Commit exists and is on branch
+   - Commit count validation
+
+3. **Test validation**
+   - Trust Claude builder's test report (test_status field)
+   - Option to run tests programmatically if needed later
+
 4. **Acceptance criteria validation**
+   - All criteria marked as met
+   - Fail ticket if criteria unmet
+
+### Phase 4: Finalization and Merge Logic (Week 2)
+
+1. **Finalize epic implementation**
+   - Topological sort of completed tickets
+   - Sequential squash merging into epic branch
+   - Ticket branch cleanup
+   - Epic branch push to remote
+
+2. **Merge conflict handling**
+   - Detect merge conflicts during finalization
+   - Fail epic with clear error message
+   - Preserve partial merge state for debugging
 
 ### Phase 5: Error Recovery (Week 3)
 
-1. **Rollback implementation**
-2. **Partial success handling**
-3. **Resume from state file** (orchestrator crash recovery)
-4. **Dependency blocking**
+1. **Ticket failure handling**
+   - \_fail_ticket() method
+   - Cascade blocking to dependent tickets
+   - Epic failure on critical ticket failure
+
+2. **Rollback implementation**
+   - Optional rollback on critical failure
+   - Branch deletion and reset
+   - State file cleanup
+
+3. **Resume from state file**
+   - Load existing epic-state.json
+   - Validate state consistency
+   - Continue from last state
 
 ### Phase 6: Integration Tests (Week 3)
 
 1. **Happy path**: Simple epic with 3 tickets, all succeed
+   - Verify stacked branches created correctly
+   - Verify tickets execute in dependency order
+   - Verify final collapse and push
+
 2. **Critical failure**: Critical ticket fails, rollback triggered
+   - Verify dependent tickets blocked
+   - Verify rollback cleans up branches
+
 3. **Non-critical failure**: Non-critical fails, dependents blocked, others
    continue
+   - Verify independent tickets still execute
+   - Verify blocking cascade
+
 4. **Complex dependencies**: Diamond dependency graph
+   - Verify base commit calculation for multiple dependencies
+   - Verify correct execution order
+
 5. **Crash recovery**: Stop mid-execution, resume from state file
+   - Verify state file persistence
+   - Verify resume continues from correct state
 
 ## Key Design Decisions
 
