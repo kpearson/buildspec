@@ -470,6 +470,57 @@ def invoke_epic_file_review(
     return str(review_artifact)
 
 
+def _create_fallback_updates_doc(updates_doc: Path, reason: str) -> None:
+    """
+    Create fallback updates documentation when Claude fails to create it.
+
+    Args:
+        updates_doc: Path to epic-file-review-updates.md file
+        reason: Reason why fallback is being created
+    """
+    from datetime import datetime
+
+    fallback_content = f"""# Epic File Review Updates
+
+**Date**: {datetime.now().strftime('%Y-%m-%d')}
+**Epic**: {updates_doc.parent.parent.name}
+**Status**: ⚠️ REVIEW FEEDBACK APPLICATION INCOMPLETE
+
+## Error
+
+{reason}
+
+## What Happened
+
+The automated review feedback application process did not complete successfully.
+This could be due to:
+- Claude session failed to execute
+- Claude could not locate necessary files
+- An error occurred during the edit process
+- No documentation was created by the LLM
+
+## Next Steps
+
+1. Review the epic-file-review.md artifact to see what changes were recommended
+2. Manually apply Priority 1 and Priority 2 fixes from the review
+3. Validate the epic file is correct before creating tickets
+
+## Changes Applied
+
+❌ No changes were applied automatically due to the error above.
+
+## Recommendation
+
+Review the original review artifact at:
+`{updates_doc.parent}/epic-file-review.md`
+
+And manually implement the recommended changes.
+"""
+
+    updates_doc.write_text(fallback_content)
+    logger.warning(f"Created fallback updates documentation: {reason}")
+
+
 def apply_review_feedback(
     review_artifact: str, epic_path: str, builder_session_id: str, context: ProjectContext
 ) -> None:
@@ -605,6 +656,9 @@ Use the Write tool to create this documentation file."""
             stderr=subprocess.DEVNULL,
         )
 
+    # Always ensure updates document exists
+    updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
+
     if result.returncode == 0:
         console.print("[green]✓ Review feedback applied[/green]")
 
@@ -623,17 +677,26 @@ Use the Write tool to create this documentation file."""
                 )
 
         # Check for updates documentation
-        updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
         if updates_doc.exists():
             console.print(f"[dim]Updates documented: {updates_doc}[/dim]")
         else:
             console.print(
-                "[yellow]⚠ No updates documentation found (epic-file-review-updates.md)[/yellow]"
+                "[yellow]⚠ No updates documentation found, creating fallback...[/yellow]"
+            )
+            _create_fallback_updates_doc(
+                updates_doc,
+                "Session completed but no documentation was created by Claude"
             )
     else:
         console.print(
             "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
         )
+        # Create fallback documentation on failure
+        if not updates_doc.exists():
+            _create_fallback_updates_doc(
+                updates_doc,
+                f"Review feedback application failed with exit code {result.returncode}"
+            )
 
 
 def handle_split_workflow(
