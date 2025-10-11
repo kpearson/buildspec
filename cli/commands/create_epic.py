@@ -12,6 +12,7 @@ from rich.console import Console
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
 from cli.core.prompts import PromptBuilder
+from cli.utils import ReviewTargets, apply_review_feedback
 from cli.utils.epic_validator import parse_epic_yaml, validate_ticket_count
 from cli.utils.path_resolver import PathResolutionError, resolve_file_argument
 
@@ -470,295 +471,6 @@ def invoke_epic_file_review(
     return str(review_artifact)
 
 
-def _create_fallback_updates_doc(updates_doc: Path, reason: str) -> None:
-    """
-    Create fallback updates documentation when Claude fails to create it.
-
-    Args:
-        updates_doc: Path to epic-file-review-updates.md file
-        reason: Reason why fallback is being created
-    """
-    from datetime import datetime
-
-    fallback_content = f"""# Epic File Review Updates
-
-**Date**: {datetime.now().strftime('%Y-%m-%d')}
-**Epic**: {updates_doc.parent.parent.name}
-**Status**: ⚠️ REVIEW FEEDBACK APPLICATION INCOMPLETE
-
-## Error
-
-{reason}
-
-## What Happened
-
-The automated review feedback application process did not complete successfully.
-This could be due to:
-- Claude session failed to execute
-- Claude could not locate necessary files
-- An error occurred during the edit process
-- No documentation was created by the LLM
-
-## Next Steps
-
-1. Review the epic-file-review.md artifact to see what changes were recommended
-2. Manually apply Priority 1 and Priority 2 fixes from the review
-3. Validate the epic file is correct before creating tickets
-
-## Changes Applied
-
-❌ No changes were applied automatically due to the error above.
-
-## Recommendation
-
-Review the original review artifact at:
-`{updates_doc.parent}/epic-file-review.md`
-
-And manually implement the recommended changes.
-"""
-
-    updates_doc.write_text(fallback_content)
-    logger.warning(f"Created fallback updates documentation: {reason}")
-
-
-def apply_review_feedback(
-    review_artifact: str, epic_path: str, builder_session_id: str, context: ProjectContext
-) -> None:
-    """
-    Resume builder Claude session to apply review feedback to epic file.
-
-    Args:
-        review_artifact: Path to epic-file-review.md artifact
-        epic_path: Path to the epic YAML file to improve
-        builder_session_id: Session ID of original epic builder to resume
-        context: Project context for execution
-    """
-    console.print("\n[blue]📝 Applying review feedback...[/blue]")
-
-    # Read review artifact
-    with open(review_artifact, "r") as f:
-        review_content = f.read()
-
-    # Build feedback application prompt with documentation requirement first
-    feedback_prompt = f"""## CRITICAL REQUIREMENT: Document Your Work
-
-You MUST create a documentation file at the end of this session.
-
-**File path**: {Path(epic_path).parent}/artifacts/epic-file-review-updates.md
-
-The file already exists as a template. You must REPLACE it using the Write tool with this structure:
-
-```markdown
----
-date: {datetime.now().strftime('%Y-%m-%d')}
-epic: {Path(epic_path).stem.replace('.epic', '')}
-builder_session_id: {builder_session_id}
-reviewer_session_id: {reviewer_session_id}
-status: completed
----
-
-# Epic File Review Updates
-
-## Changes Applied
-
-### Priority 1 Fixes
-[List EACH Priority 1 issue fixed with SPECIFIC changes made]
-
-### Priority 2 Fixes
-[List EACH Priority 2 issue fixed with SPECIFIC changes made]
-
-## Changes Not Applied
-[List any recommended changes NOT applied and WHY]
-
-## Summary
-[1-2 sentences describing overall improvements]
-```
-
-**IMPORTANT**: Change `status: completed` in the frontmatter. This is how we know you finished.
-
----
-
-## Your Task: Apply Review Feedback
-
-You are improving an epic file based on a comprehensive review.
-
-**Epic file**: {epic_path}
-**Review report below**:
-
-{review_content}
-
-### Workflow
-
-1. **Read** the epic file at {epic_path}
-2. **Identify** Priority 1 and Priority 2 issues from the review
-3. **Apply fixes** using Edit tool (surgical changes only)
-4. **Document** your changes by writing the file above
-
-### What to Fix
-
-**Priority 1 (Must Fix)**:
-- Add missing function examples to ticket descriptions (Paragraph 2)
-- Define missing terms (like "epic baseline") in coordination_requirements
-- Add missing specifications (error handling, acceptance criteria formats)
-- Fix dependency errors
-
-**Priority 2 (Should Fix if time permits)**:
-- Add integration contracts to tickets
-- Clarify implementation details
-- Add test coverage requirements
-
-### Important Rules
-
-- ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
-- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
-- ✅ **KEEP** existing ticket IDs unchanged
-- ✅ **VERIFY** changes after each edit
-- ❌ **DO NOT** rewrite the entire epic
-- ❌ **DO NOT** change the epic schema
-
-### Example Surgical Edit
-
-Good approach:
-```
-Use Edit tool to add function examples to ticket description Paragraph 2:
-- Find: "Implement git operations wrapper"
-- Replace with: "Implement git operations wrapper.
-
-  Key functions:
-  - create_branch(name: str, base: str) -> None: creates branch from commit
-  - push_branch(name: str) -> None: pushes branch to remote"
-```
-
-### Final Step
-
-After all edits, use Write tool to replace {Path(epic_path).parent}/artifacts/epic-file-review-updates.md with your documentation."""
-
-    # Pre-create updates document path
-    updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
-
-    # Extract reviewer_session_id from review artifact frontmatter
-    import re
-    reviewer_session_id = "unknown"
-    try:
-        review_frontmatter = re.search(r'reviewer_session_id:\s*(\S+)', review_content)
-        if review_frontmatter:
-            reviewer_session_id = review_frontmatter.group(1)
-    except Exception:
-        pass
-
-    # Create template document before Claude runs
-    # This ensures visibility even if Claude doesn't create it
-    from datetime import datetime
-    template_content = f"""---
-date: {datetime.now().strftime('%Y-%m-%d')}
-epic: {Path(epic_path).stem.replace('.epic', '')}
-builder_session_id: {builder_session_id}
-reviewer_session_id: {reviewer_session_id}
-status: in_progress
----
-
-# Epic File Review Updates
-
-**Status**: 🔄 IN PROGRESS
-
-## Changes Being Applied
-
-Claude is currently applying review feedback. This document will be updated with:
-- Priority 1 fixes applied
-- Priority 2 fixes applied
-- Changes not applied (if any)
-
-If you see this message, Claude may not have finished documenting changes.
-Check the epic file modification time and compare with the review artifact.
-"""
-    updates_doc.write_text(template_content)
-    console.print(f"[dim]Created updates template: {updates_doc}[/dim]")
-
-    # Execute feedback application by resuming builder session
-    runner = ClaudeRunner(context)
-
-    # Prepare log and error files
-    log_file = Path(epic_path).parent / "artifacts" / "epic-feedback-application.log"
-    error_file = Path(epic_path).parent / "artifacts" / "epic-feedback-application.errors"
-
-    with console.status(
-        "[bold cyan]Claude is applying review feedback...[/bold cyan]",
-        spinner="bouncingBar",
-    ):
-        with open(log_file, 'w') as log_f, open(error_file, 'w') as err_f:
-            result = subprocess.run(
-                [
-                    "claude",
-                    "--dangerously-skip-permissions",
-                    "--session-id",
-                    builder_session_id,
-                ],
-                input=feedback_prompt,
-                text=True,
-                cwd=context.cwd,
-                stdout=log_f,
-                stderr=err_f,
-            )
-
-    # Check for errors in stderr
-    has_errors = error_file.exists() and error_file.stat().st_size > 0
-
-    # Clean up empty error file
-    if error_file.exists() and error_file.stat().st_size == 0:
-        error_file.unlink()
-
-    if result.returncode == 0:
-        console.print("[green]✓ Review feedback applied[/green]")
-        console.print(f"[dim]Session log: {log_file}[/dim]")
-
-        if has_errors:
-            console.print(f"[yellow]⚠ Errors occurred during execution: {error_file}[/yellow]")
-
-        # Check if epic file was actually modified
-        epic_file = Path(epic_path)
-        if epic_file.exists():
-            # Compare timestamps - review artifact should be older than epic file now
-            review_time = Path(review_artifact).stat().st_mtime
-            epic_time = epic_file.stat().st_mtime
-
-            if epic_time > review_time:
-                console.print("[dim]Epic file updated successfully[/dim]")
-            else:
-                console.print(
-                    "[yellow]⚠ Epic file may not have been modified[/yellow]"
-                )
-
-        # Check if updates documentation was properly filled in by Claude
-        if updates_doc.exists():
-            content = updates_doc.read_text()
-            if "IN PROGRESS" in content or "status: in_progress" in content:
-                # Claude didn't update the template - create fallback
-                console.print(
-                    "[yellow]⚠ Updates documentation not completed by Claude, creating fallback...[/yellow]"
-                )
-                if has_errors:
-                    console.print(f"[yellow]Check errors: {error_file}[/yellow]")
-                else:
-                    console.print(f"[yellow]Check the log: {log_file}[/yellow]")
-                _create_fallback_updates_doc(
-                    updates_doc,
-                    "Session completed but Claude did not update the documentation template"
-                )
-            else:
-                # Claude updated it successfully
-                console.print(f"[dim]Updates documented: {updates_doc}[/dim]")
-    else:
-        console.print(
-            "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
-        )
-        # Create fallback documentation on failure
-        if not updates_doc.exists():
-            _create_fallback_updates_doc(
-                updates_doc,
-                f"Review feedback application failed with exit code {result.returncode}"
-            )
-
-
 def handle_split_workflow(
     epic_path: str, spec_path: str, ticket_count: int, context: ProjectContext
 ) -> None:
@@ -963,8 +675,47 @@ def command(
 
                     # Step 2: Apply review feedback if review succeeded
                     if review_artifact:
+                        # Extract required parameters for ReviewTargets
+                        import re
+                        epic_file_path = Path(epic_path)
+                        epic_dir = epic_file_path.parent
+                        artifacts_dir = epic_dir / "artifacts"
+                        epic_name = epic_file_path.stem.replace(".epic", "")
+
+                        # Extract reviewer_session_id from review artifact
+                        reviewer_session_id = "unknown"
+                        try:
+                            review_content = Path(review_artifact).read_text()
+                            session_match = re.search(
+                                r'reviewer_session_id:\s*(\S+)',
+                                review_content
+                            )
+                            if session_match:
+                                reviewer_session_id = session_match.group(1)
+                        except Exception:
+                            pass
+
+                        # Create ReviewTargets instance
+                        targets = ReviewTargets(
+                            primary_file=epic_file_path,
+                            additional_files=[],
+                            editable_directories=[epic_dir],
+                            artifacts_dir=artifacts_dir,
+                            updates_doc_name="epic-file-review-updates.md",
+                            log_file_name="epic-file-review.log",
+                            error_file_name="epic-file-review.error.log",
+                            epic_name=epic_name,
+                            reviewer_session_id=reviewer_session_id,
+                            review_type="epic-file"
+                        )
+
+                        # Call shared apply_review_feedback()
                         apply_review_feedback(
-                            review_artifact, str(epic_path), session_id, context
+                            review_artifact_path=Path(review_artifact),
+                            builder_session_id=session_id,
+                            context=context,
+                            targets=targets,
+                            console=console
                         )
 
                     # Step 3: Validate ticket count and trigger split workflow if needed
