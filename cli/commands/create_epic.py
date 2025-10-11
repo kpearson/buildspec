@@ -539,101 +539,99 @@ def apply_review_feedback(
     with open(review_artifact, "r") as f:
         review_content = f.read()
 
-    # Build feedback application prompt
-    feedback_prompt = f"""You are improving an epic file based on a comprehensive review.
+    # Build feedback application prompt with documentation requirement first
+    feedback_prompt = f"""## CRITICAL REQUIREMENT: Document Your Work
 
-## Your Task
+You MUST create a documentation file at the end of this session.
 
-Read the epic file at: {epic_path}
+**File path**: {Path(epic_path).parent}/artifacts/epic-file-review-updates.md
 
-Then read this review report and implement the Priority 1 and Priority 2 recommendations:
+The file already exists as a template. You must REPLACE it using the Write tool with this structure:
+
+```markdown
+---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: {Path(epic_path).stem.replace('.epic', '')}
+builder_session_id: {builder_session_id}
+reviewer_session_id: {reviewer_session_id}
+status: completed
+---
+
+# Epic File Review Updates
+
+## Changes Applied
+
+### Priority 1 Fixes
+[List EACH Priority 1 issue fixed with SPECIFIC changes made]
+
+### Priority 2 Fixes
+[List EACH Priority 2 issue fixed with SPECIFIC changes made]
+
+## Changes Not Applied
+[List any recommended changes NOT applied and WHY]
+
+## Summary
+[1-2 sentences describing overall improvements]
+```
+
+**IMPORTANT**: Change `status: completed` in the frontmatter. This is how we know you finished.
+
+---
+
+## Your Task: Apply Review Feedback
+
+You are improving an epic file based on a comprehensive review.
+
+**Epic file**: {epic_path}
+**Review report below**:
 
 {review_content}
 
-## What to Do
+### Workflow
 
-1. Read the current epic file to understand its structure
-2. Identify the specific Priority 1 and Priority 2 issues mentioned in the review
-3. Make **surgical edits** to fix each issue:
-   - Use Edit tool for targeted changes (not Write tool for complete rewrites)
-   - Keep the existing epic structure and field names
-   - Only modify the specific sections that need fixing
-   - Preserve all existing content that isn't being fixed
+1. **Read** the epic file at {epic_path}
+2. **Identify** Priority 1 and Priority 2 issues from the review
+3. **Apply fixes** using Edit tool (surgical changes only)
+4. **Document** your changes by writing the file above
 
-## Priority 1 Issues (Must Fix)
+### What to Fix
 
-Focus on these critical fixes:
+**Priority 1 (Must Fix)**:
 - Add missing function examples to ticket descriptions (Paragraph 2)
 - Define missing terms (like "epic baseline") in coordination_requirements
 - Add missing specifications (error handling, acceptance criteria formats)
 - Fix dependency errors
 
-## Priority 2 Issues (Should Fix)
-
-If time permits:
+**Priority 2 (Should Fix if time permits)**:
 - Add integration contracts to tickets
 - Clarify implementation details
 - Add test coverage requirements
 
-## Important Rules
+### Important Rules
 
-- **DO NOT rewrite the entire epic** - make targeted edits only
-- **DO NOT change the epic schema** - keep existing field names (epic, description, ticket_count, etc.)
-- **DO NOT change ticket IDs** - keep existing identifiers
-- **DO use Edit tool** - for surgical changes to specific sections
-- **DO preserve structure** - maintain YAML formatting and organization
-- **DO verify changes** - read the file after each edit to confirm
+- ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
+- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
+- ✅ **KEEP** existing ticket IDs unchanged
+- ✅ **VERIFY** changes after each edit
+- ❌ **DO NOT** rewrite the entire epic
+- ❌ **DO NOT** change the epic schema
 
-## Example of Surgical Edit
+### Example Surgical Edit
 
-Bad (complete rewrite):
+Good approach:
 ```
-Write entire new epic with different structure
-```
-
-Good (targeted fix):
-```
-Edit ticket description to add function examples in Paragraph 2:
-- Old: "Implement git operations wrapper"
-- New: "Implement git operations wrapper.
+Use Edit tool to add function examples to ticket description Paragraph 2:
+- Find: "Implement git operations wrapper"
+- Replace with: "Implement git operations wrapper.
 
   Key functions:
   - create_branch(name: str, base: str) -> None: creates branch from commit
   - push_branch(name: str) -> None: pushes branch to remote"
 ```
 
-Begin by reading the epic file, then make surgical edits to fix Priority 1 issues.
+### Final Step
 
-## CRITICAL: Document Your Changes
-
-After making all edits, create a summary document at the path:
-{Path(epic_path).parent}/artifacts/epic-file-review-updates.md
-
-This document should contain:
-
-```markdown
-# Epic File Review Updates
-
-**Date**: [current date]
-**Epic**: [epic name]
-**Review Session**: {reviewer_session_id if 'reviewer_session_id' in review_content else 'unknown'}
-
-## Changes Applied
-
-### Priority 1 Fixes
-[List each Priority 1 issue that was fixed, with specific changes made]
-
-### Priority 2 Fixes
-[List each Priority 2 issue that was fixed, with specific changes made]
-
-## Changes Not Applied
-[List any recommended changes that were NOT applied and why]
-
-## Summary
-[1-2 sentences describing the overall improvements made to the epic]
-```
-
-Use the Write tool to create this documentation file."""
+After all edits, use Write tool to replace {Path(epic_path).parent}/artifacts/epic-file-review-updates.md with your documentation."""
 
     # Pre-create updates document path
     updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
@@ -679,26 +677,31 @@ Check the epic file modification time and compare with the review artifact.
     # Execute feedback application by resuming builder session
     runner = ClaudeRunner(context)
 
+    # Prepare log file for stdout/stderr
+    log_file = Path(epic_path).parent / "artifacts" / "epic-feedback-application.log"
+
     with console.status(
         "[bold cyan]Claude is applying review feedback...[/bold cyan]",
         spinner="bouncingBar",
     ):
-        result = subprocess.run(
-            [
-                "claude",
-                "--dangerously-skip-permissions",
-                "--session-id",
-                builder_session_id,
-            ],
-            input=feedback_prompt,
-            text=True,
-            cwd=context.cwd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        with open(log_file, 'w') as log_f:
+            result = subprocess.run(
+                [
+                    "claude",
+                    "--dangerously-skip-permissions",
+                    "--session-id",
+                    builder_session_id,
+                ],
+                input=feedback_prompt,
+                text=True,
+                cwd=context.cwd,
+                stdout=log_f,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+            )
 
     if result.returncode == 0:
         console.print("[green]✓ Review feedback applied[/green]")
+        console.print(f"[dim]Session log: {log_file}[/dim]")
 
         # Check if epic file was actually modified
         epic_file = Path(epic_path)
@@ -717,11 +720,12 @@ Check the epic file modification time and compare with the review artifact.
         # Check if updates documentation was properly filled in by Claude
         if updates_doc.exists():
             content = updates_doc.read_text()
-            if "IN PROGRESS" in content:
+            if "IN PROGRESS" in content or "status: in_progress" in content:
                 # Claude didn't update the template - create fallback
                 console.print(
                     "[yellow]⚠ Updates documentation not completed by Claude, creating fallback...[/yellow]"
                 )
+                console.print(f"[yellow]Check the log for details: {log_file}[/yellow]")
                 _create_fallback_updates_doc(
                     updates_doc,
                     "Session completed but Claude did not update the documentation template"
