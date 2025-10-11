@@ -677,14 +677,15 @@ Check the epic file modification time and compare with the review artifact.
     # Execute feedback application by resuming builder session
     runner = ClaudeRunner(context)
 
-    # Prepare log file for stdout/stderr
+    # Prepare log and error files
     log_file = Path(epic_path).parent / "artifacts" / "epic-feedback-application.log"
+    error_file = Path(epic_path).parent / "artifacts" / "epic-feedback-application.errors"
 
     with console.status(
         "[bold cyan]Claude is applying review feedback...[/bold cyan]",
         spinner="bouncingBar",
     ):
-        with open(log_file, 'w') as log_f:
+        with open(log_file, 'w') as log_f, open(error_file, 'w') as err_f:
             result = subprocess.run(
                 [
                     "claude",
@@ -696,12 +697,22 @@ Check the epic file modification time and compare with the review artifact.
                 text=True,
                 cwd=context.cwd,
                 stdout=log_f,
-                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+                stderr=err_f,
             )
+
+    # Check for errors in stderr
+    has_errors = error_file.exists() and error_file.stat().st_size > 0
+
+    # Clean up empty error file
+    if error_file.exists() and error_file.stat().st_size == 0:
+        error_file.unlink()
 
     if result.returncode == 0:
         console.print("[green]✓ Review feedback applied[/green]")
         console.print(f"[dim]Session log: {log_file}[/dim]")
+
+        if has_errors:
+            console.print(f"[yellow]⚠ Errors occurred during execution: {error_file}[/yellow]")
 
         # Check if epic file was actually modified
         epic_file = Path(epic_path)
@@ -725,7 +736,10 @@ Check the epic file modification time and compare with the review artifact.
                 console.print(
                     "[yellow]⚠ Updates documentation not completed by Claude, creating fallback...[/yellow]"
                 )
-                console.print(f"[yellow]Check the log for details: {log_file}[/yellow]")
+                if has_errors:
+                    console.print(f"[yellow]Check errors: {error_file}[/yellow]")
+                else:
+                    console.print(f"[yellow]Check the log: {log_file}[/yellow]")
                 _create_fallback_updates_doc(
                     updates_doc,
                     "Session completed but Claude did not update the documentation template"
