@@ -638,13 +638,29 @@ Use the Write tool to create this documentation file."""
     # Pre-create updates document path
     updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
 
+    # Extract reviewer_session_id from review artifact frontmatter
+    import re
+    reviewer_session_id = "unknown"
+    try:
+        review_frontmatter = re.search(r'reviewer_session_id:\s*(\S+)', review_content)
+        if review_frontmatter:
+            reviewer_session_id = review_frontmatter.group(1)
+    except Exception:
+        pass
+
     # Create template document before Claude runs
     # This ensures visibility even if Claude doesn't create it
     from datetime import datetime
-    template_content = f"""# Epic File Review Updates
+    template_content = f"""---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: {Path(epic_path).stem.replace('.epic', '')}
+builder_session_id: {builder_session_id}
+reviewer_session_id: {reviewer_session_id}
+status: in_progress
+---
 
-**Date**: {datetime.now().strftime('%Y-%m-%d')}
-**Epic**: {Path(epic_path).stem.replace('.epic', '')}
+# Epic File Review Updates
+
 **Status**: 🔄 IN PROGRESS
 
 ## Changes Being Applied
