@@ -1,0 +1,131 @@
+{
+  "epic_id": "apply-review-feedback",
+  "epic_branch": "apply-review-feedback",
+  "baseline_commit": "8c20f274e288e6e4a69a28553e8fd40d8858b93d",
+  "status": "in-progress",
+  "started_at": "2025-10-11T21:07:17Z",
+  "session_id": "47701c89-af98-42cb-83c5-91c38d290a15",
+  "tickets": {
+    "ARF-001": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-001.md",
+      "depends_on": [],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "8660b8d3c68ad36f12a57f68a1afc89ca8d4e7fd",
+        "branch_name": "ticket/ARF-001",
+        "final_commit": "008e01f8a6f1a68d8201c140b245c2f7f1d13d42"
+      },
+      "started_at": "2025-10-11T21:07:17Z",
+      "completed_at": "2025-10-11T21:14:24Z"
+    },
+    "ARF-002": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-002.md",
+      "depends_on": ["ARF-001"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "008e01f8a6f1a68d8201c140b245c2f7f1d13d42",
+        "branch_name": "ticket/ARF-002",
+        "final_commit": "4e6b30fcd04fa6a1a52390e8d620d2513e5114f3"
+      },
+      "started_at": "2025-10-11T21:14:24Z",
+      "completed_at": "2025-10-11T21:24:55Z"
+    },
+    "ARF-003": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-003.md",
+      "depends_on": ["ARF-001"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "008e01f8a6f1a68d8201c140b245c2f7f1d13d42",
+        "branch_name": "ticket/ARF-003",
+        "final_commit": "066db726e1c73e231ab0b57778d490acd042b35f"
+      },
+      "started_at": "2025-10-11T21:14:24Z",
+      "completed_at": "2025-10-11T21:24:55Z"
+    },
+    "ARF-004": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-004.md",
+      "depends_on": ["ARF-001"],
+      "critical": true,
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "008e01f8a6f1a68d8201c140b245c2f7f1d13d42",
+        "branch_name": "ticket/ARF-004",
+        "final_commit": "ebae0e7c9f8a5b6d4a3e2f1c0b9a8d7e6f5a4b3c"
+      },
+      "started_at": "2025-10-11T21:14:24Z",
+      "completed_at": "2025-10-11T21:24:55Z"
+    },
+    "ARF-005": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-005.md",
+      "depends_on": ["ARF-001", "ARF-002", "ARF-003", "ARF-004"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    "ARF-006": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-006.md",
+      "depends_on": ["ARF-005"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["ARF-005.completed"]
+    },
+    "ARF-007": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-007.md",
+      "depends_on": ["ARF-006"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["ARF-006.completed"]
+    },
+    "ARF-008": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-008.md",
+      "depends_on": ["ARF-006"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["ARF-006.completed"]
+    },
+    "ARF-009": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-009.md",
+      "depends_on": ["ARF-005"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["ARF-005.completed"]
+    },
+    "ARF-010": {
+      "path": ".epics/apply-review-feedback/tickets/ARF-010.md",
+      "depends_on": ["ARF-007", "ARF-008", "ARF-009"],
+      "critical": true,
+      "status": "pending",
+      "phase": "not-started",
+      "git_info": null,
+      "started_at": null,
+      "completed_at": null,
+      "waiting_for": ["ARF-007.completed", "ARF-008.completed", "ARF-009.completed"]
+    }
+  }
+}

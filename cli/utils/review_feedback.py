@@ -8,7 +8,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Literal, Set
+from typing import TYPE_CHECKING, List, Literal, Set
+
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from cli.core.context import ProjectContext
 
 
 @dataclass
@@ -77,7 +82,9 @@ class ReviewTargets:
     review_type: Literal["epic-file", "epic"]
 
 
-def _create_template_doc(targets: ReviewTargets, builder_session_id: str) -> None:
+def _create_template_doc(  # noqa: E501
+    targets: ReviewTargets, builder_session_id: str
+) -> None:
     """Create a template documentation file before Claude runs.
 
     This function writes an initial template documentation file with frontmatter
@@ -92,10 +99,10 @@ def _create_template_doc(targets: ReviewTargets, builder_session_id: str) -> Non
     - Placeholder sections that indicate what will be documented
 
     Args:
-        targets: ReviewTargets configuration containing file paths and metadata.
-            The template is written to targets.artifacts_dir / targets.updates_doc_name.
-        builder_session_id: Session ID of the builder command (create-epic or
-            create-tickets) that is applying the review feedback. Used for
+        targets: ReviewTargets configuration containing file paths and
+            metadata. Template is written to artifacts_dir / updates_doc_name.
+        builder_session_id: Session ID of the builder command (create-epic
+            or create-tickets) applying the review feedback. Used for
             traceability in logs.
 
     Side Effects:
@@ -113,7 +120,7 @@ def _create_template_doc(targets: ReviewTargets, builder_session_id: str) -> Non
         - date: Current date in YYYY-MM-DD format
         - epic: Name of the epic (from targets.epic_name)
         - builder_session_id: Session ID of the builder command
-        - reviewer_session_id: Session ID of the reviewer (from targets.reviewer_session_id)
+        - reviewer_session_id: Session ID from targets.reviewer_session_id
         - status: Set to "in_progress" to enable failure detection
 
     Workflow Context:
@@ -167,12 +174,12 @@ This template will be replaced by Claude with documentation of changes made.
 def _create_fallback_updates_doc(
     targets: ReviewTargets, stdout: str, stderr: str, builder_session_id: str
 ) -> None:
-    """Create fallback documentation when Claude fails to update the template file.
+    """Create fallback documentation when Claude fails to update template.
 
-    This function serves as a safety net when Claude fails to complete the review
-    feedback application process. It analyzes stdout and stderr to extract insights
-    about what happened, detects which files were potentially modified, and creates
-    comprehensive documentation to aid manual verification.
+    This function serves as a safety net when Claude fails to complete
+    the review feedback application process. It analyzes stdout/stderr
+    to extract insights, detects which files were potentially modified,
+    and creates comprehensive documentation to aid manual verification.
 
     The fallback document includes:
     - Complete frontmatter with status (completed_with_errors or completed)
@@ -182,10 +189,10 @@ def _create_fallback_updates_doc(
     - Guidance for manual verification and next steps
 
     Args:
-        targets: ReviewTargets configuration containing file paths and metadata
-        stdout: Standard output from Claude session (contains file operations log)
-        stderr: Standard error from Claude session (contains errors and warnings)
-        builder_session_id: Session ID of the builder session that ran Claude
+        targets: ReviewTargets configuration containing file paths/metadata
+        stdout: Standard output from Claude session (file operations log)
+        stderr: Standard error from Claude session (errors and warnings)
+        builder_session_id: Session ID of the builder session
 
     Side Effects:
         Writes a markdown file with frontmatter to:
@@ -210,9 +217,9 @@ def _create_fallback_updates_doc(
             reviewer_session_id="abc-123",
             ...
         )
-        _create_fallback_updates_doc(
+        _create_fallback_updates_doc(  # noqa: E501
             targets=targets,
-            stdout="Edited file: /path/to/epic.yaml\\nRead file: /path/to/ticket.md",
+            stdout="Edited file: /path/to/epic.yaml\\nRead: /path/to/ticket.md",
             stderr="Warning: Some validation failed",
             builder_session_id="xyz-789"
         )
@@ -236,7 +243,9 @@ status: {status}
     # Build status section
     status_section = """## Status
 
-Claude did not update the template documentation file as expected. This fallback document was automatically created to preserve the session output and provide debugging information."""
+Claude did not update the template documentation file as expected.
+This fallback document was automatically created to preserve the
+session output and provide debugging information."""
 
     # Build what happened section
     what_happened = _analyze_output(stdout, stderr)
@@ -268,7 +277,10 @@ Claude did not update the template documentation file as expected. This fallback
 
 ## Files Potentially Modified"""
     if modified_files:
-        files_section += "\n\nThe following files may have been edited based on stdout analysis:\n"
+        files_section += (
+            "\n\nThe following files may have been edited "
+            "based on stdout analysis:\n"
+        )
         for file_path in sorted(modified_files):
             files_section += f"- `{file_path}`\n"
     else:
@@ -280,11 +292,11 @@ Claude did not update the template documentation file as expected. This fallback
 ## Next Steps
 
 1. Review the stdout and stderr logs above to understand what happened
-2. Check if any files were actually modified by comparing timestamps
+2. Check if any files were modified by comparing timestamps
 3. Manually verify the changes if files were edited
-4. Review the original review artifact to see what changes were recommended
+4. Review the original review artifact for recommended changes
 5. Apply any missing changes manually if needed
-6. Validate that all Priority 1 and Priority 2 fixes have been addressed"""
+6. Validate Priority 1 and Priority 2 fixes have been addressed"""
 
     # Combine all sections
     fallback_content = f"""{frontmatter}
@@ -392,18 +404,19 @@ def _analyze_output(stdout: str, stderr: str) -> str:
         if operation_parts:
             operations = ", ".join(operation_parts)
             analysis_parts.append(
-                f"Claude performed {operations}. "
-                "However, the template documentation file was not properly updated."
+                f"Claude performed {operations}. However, the template "
+                "documentation file was not properly updated."
             )
         else:
             analysis_parts.append(
-                "Claude executed but no file operation patterns were detected in stdout. "
-                "The session may have completed without making changes."
+                "Claude executed but no file operation patterns were "
+                "detected in stdout. The session may have completed "
+                "without making changes."
             )
     else:
         analysis_parts.append(
-            "No standard output was captured. "
-            "The Claude session may have failed to execute or produced no output."
+            "No standard output was captured. The Claude session may have "
+            "failed to execute or produced no output."
         )
 
     # Combine analysis
@@ -411,8 +424,8 @@ def _analyze_output(stdout: str, stderr: str) -> str:
         return " ".join(analysis_parts)
     else:
         return (
-            "The Claude session completed but did not update the template file. "
-            "No additional information is available."
+            "The Claude session completed but did not update the template "
+            "file. No additional information is available."
         )
 
 def _build_feedback_prompt(
@@ -468,7 +481,8 @@ You MUST create a documentation file at the end of this session.
 
 **File path**: {updates_doc_path}
 
-The file already exists as a template. You must REPLACE it using the Write tool with this structure:
+The file already exists as a template. You must REPLACE it using the
+Write tool with this structure:
 
 ```markdown
 ---
@@ -479,7 +493,8 @@ reviewer_session_id: {targets.reviewer_session_id}
 status: completed
 ---
 
-# {"Epic File Review Updates" if targets.review_type == "epic-file" else "Epic Review Updates"}
+# {("Epic File Review Updates" if targets.review_type == "epic-file"
+   else "Epic Review Updates")}
 
 ## Changes Applied
 
@@ -496,7 +511,8 @@ status: completed
 [1-2 sentences describing overall improvements]
 ```
 
-**IMPORTANT**: Change `status: completed` in the frontmatter. This is how we know you finished."""
+**IMPORTANT**: Change `status: completed` in the frontmatter. This is
+how we know you finished."""
 
     # Section 2: Task description
     if targets.review_type == "epic-file":
@@ -530,7 +546,8 @@ You are improving an epic and its tickets based on a comprehensive review.
         workflow = f"""### Workflow
 
 1. **Read** the epic file at {targets.primary_file}
-2. **Read** all ticket files in {', '.join(str(d) for d in targets.editable_directories)}
+2. **Read** all ticket files in {', '.join(
+   str(d) for d in targets.editable_directories)}
 3. **Identify** Priority 1 and Priority 2 issues from the review
 4. **Apply fixes** using Edit tool (surgical changes only)
 5. **Document** your changes by writing the file above"""
@@ -554,7 +571,8 @@ You are improving an epic and its tickets based on a comprehensive review.
         important_rules = """### Important Rules
 
 - ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
-- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
+- ✅ **PRESERVE** existing epic structure and field names
+  (epic, description, ticket_count, etc.)
 - ✅ **KEEP** existing ticket IDs unchanged
 - ✅ **MAINTAIN** coordination requirements between tickets
 - ✅ **VERIFY** changes after each edit
@@ -565,7 +583,8 @@ You are improving an epic and its tickets based on a comprehensive review.
 
 **For Epic YAML:**
 - ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
-- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
+- ✅ **PRESERVE** existing epic structure and field names
+  (epic, description, ticket_count, etc.)
 - ✅ **KEEP** existing ticket IDs unchanged
 - ✅ **MAINTAIN** coordination requirements between tickets
 - ✅ **VERIFY** changes after each edit
@@ -598,7 +617,8 @@ Use Edit tool to add function examples to ticket description Paragraph 2:
     # Section 8: Final documentation step
     final_step = f"""### Final Step
 
-After all edits, use Write tool to replace {updates_doc_path} with your documentation."""
+After all edits, use Write tool to replace {updates_doc_path}
+with your documentation."""
 
     # Combine all sections with proper spacing
     prompt = f"""{doc_requirement}
@@ -620,3 +640,300 @@ After all edits, use Write tool to replace {updates_doc_path} with your document
 {final_step}"""
 
     return prompt
+
+
+def apply_review_feedback(
+    review_artifact_path: Path,
+    builder_session_id: str,
+    context: "ProjectContext",
+    targets: ReviewTargets,
+    console: "Console",
+) -> None:
+    """Orchestrate the complete review feedback application workflow.
+
+    This is the main entry point for applying review feedback from a review
+    artifact to target files (epic YAML and/or ticket markdown files). It
+    coordinates all steps of the workflow: reading the review, building the
+    prompt, creating the template doc, resuming the Claude session, validating
+    completion, and creating fallback documentation if needed.
+
+    Workflow Steps:
+        1. Read review artifact from review_artifact_path
+        2. Build feedback application prompt using _build_feedback_prompt()
+        3. Create template documentation using _create_template_doc()
+        4. Resume builder session with feedback prompt using subprocess
+        5. Validate documentation was completed (check frontmatter status)
+        6. Create fallback documentation if needed using
+           _create_fallback_updates_doc()
+
+    Error Handling:  # noqa: E501
+        - FileNotFoundError: review_artifact_path missing → log, re-raise
+        - yaml.YAMLError: frontmatter parsing fails → log, re-raise
+        - OSError: file operations fail → log, re-raise
+        - subprocess errors: Claude fails → log, create fallback, continue
+        - Partial failures: some files updated → log warnings, continue
+
+    Console Output:
+        - Displays "Applying review feedback..." at start
+        - Shows spinner/progress indicator during Claude execution
+        - Displays success message with file change count when complete
+        - Displays path to documentation artifact when complete
+        - Shows error messages clearly when failures occur
+
+    Args:
+        review_artifact_path: Path to review artifact file containing
+            the review feedback to apply.
+        builder_session_id: Session ID of the original builder session
+            (create-epic or create-tickets) to resume for applying feedback.
+        context: ProjectContext for Claude execution (cwd, project_root).
+        targets: ReviewTargets specifying which files to edit, where to
+            write logs, and other metadata.
+        console: Rich Console instance for user-facing output.
+
+    Returns:
+        None. This function has side effects only: edits files, creates logs,
+        creates documentation.
+
+    Raises:
+        FileNotFoundError: If review artifact file doesn't exist.
+        yaml.YAMLError: If review artifact YAML frontmatter is malformed.
+        OSError: If file operations fail (directory creation, file writing).
+
+    Side Effects:
+        - Edits targets.primary_file (epic YAML)
+        - Edits files in targets.additional_files (ticket markdown)
+        - Creates/updates artifacts_dir/updates_doc_name (documentation)
+        - Creates artifacts_dir/log_file_name (stdout log)
+        - Creates artifacts_dir/error_file_name (stderr log)
+
+    Integration:
+        - Uses _build_feedback_prompt() to generate Claude prompt
+        - Uses _create_template_doc() to create initial template
+        - Uses _create_fallback_updates_doc() for failure recovery
+        - Uses subprocess.run() to execute Claude CLI
+        - Uses yaml.safe_load() to parse frontmatter
+
+    Example:
+        targets = ReviewTargets(
+            primary_file=Path(".epics/my-epic/my-epic.epic.yaml"),
+            additional_files=[],
+            editable_directories=[Path(".epics/my-epic")],
+            artifacts_dir=Path(".epics/my-epic/artifacts"),
+            updates_doc_name="epic-file-review-updates.md",
+            log_file_name="epic-file-review.log",
+            error_file_name="epic-file-review.error.log",
+            epic_name="my-epic",
+            reviewer_session_id="abc-123",
+            review_type="epic-file"
+        )
+        apply_review_feedback(
+            review_artifact_path=Path(".epics/my-epic/artifacts/epic-file-review.md"),
+            builder_session_id="xyz-789",
+            context=context,
+            targets=targets,
+            console=console
+        )
+    """
+    import logging
+    import subprocess
+
+    import yaml
+
+    logger = logging.getLogger(__name__)
+
+    # Display progress message
+    console.print("\n[blue]Applying review feedback...[/blue]")
+
+    try:
+        # Step 1: Read review artifact
+        try:
+            review_content = review_artifact_path.read_text(encoding="utf-8")
+            logger.info(f"Read review artifact: {review_artifact_path}")
+        except FileNotFoundError:
+            error_msg = f"Review artifact not found: {review_artifact_path}"
+            logger.error(error_msg)
+            console.print(f"[red]Error: {error_msg}[/red]")
+            raise
+
+        # Step 2: Build feedback application prompt
+        try:
+            feedback_prompt = _build_feedback_prompt(
+                review_content=review_content,
+                targets=targets,
+                builder_session_id=builder_session_id,
+            )
+            logger.info("Built feedback application prompt")
+        except Exception as e:
+            error_msg = f"Failed to build feedback prompt: {e}"
+            logger.error(error_msg)
+            console.print(f"[red]Error: {error_msg}[/red]")
+            raise
+
+        # Step 3: Create template documentation
+        try:
+            _create_template_doc(
+                targets=targets, builder_session_id=builder_session_id
+            )
+            template_doc = targets.artifacts_dir / targets.updates_doc_name
+            logger.info(f"Created template documentation: {template_doc}")
+        except OSError as e:
+            error_msg = f"Failed to create template documentation: {e}"
+            logger.error(error_msg)
+            console.print(f"[red]Error: {error_msg}[/red]")
+            raise
+
+        # Step 4: Resume builder session with feedback prompt
+        log_file_path = targets.artifacts_dir / targets.log_file_name
+        error_file_path = targets.artifacts_dir / targets.error_file_name
+
+        # Ensure artifacts directory exists
+        targets.artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        claude_stdout = ""
+        claude_stderr = ""
+
+        try:
+            with console.status(
+                "[bold cyan]Claude is applying review feedback...[/bold cyan]",
+                spinner="bouncingBar",
+            ):
+                # Run Claude CLI subprocess and capture output
+                result = subprocess.run(
+                    [
+                        "claude",
+                        "--dangerously-skip-permissions",
+                        "--session-id",
+                        builder_session_id,
+                    ],
+                    input=feedback_prompt,
+                    text=True,
+                    cwd=str(context.cwd),
+                    capture_output=True,
+                    check=False,
+                )
+
+                claude_stdout = result.stdout
+                claude_stderr = result.stderr
+
+            # Write stdout and stderr to log files
+            if claude_stdout:
+                log_file_path.write_text(claude_stdout, encoding="utf-8")
+                logger.info(f"Wrote stdout to: {log_file_path}")
+
+            if claude_stderr:
+                error_file_path.write_text(claude_stderr, encoding="utf-8")
+                logger.warning(f"Wrote stderr to: {error_file_path}")
+
+            if result.returncode != 0:
+                logger.warning(
+                    f"Claude session exited with code {result.returncode}"
+                )
+
+        except Exception as e:
+            error_msg = f"Claude session failed: {e}"
+            logger.error(error_msg)
+            console.print(f"[yellow]Warning: {error_msg}[/yellow]")
+
+            # Create fallback doc and continue
+            _create_fallback_updates_doc(
+                targets=targets,
+                stdout=claude_stdout,
+                stderr=claude_stderr,
+                builder_session_id=builder_session_id,
+            )
+            fallback_doc = targets.artifacts_dir / targets.updates_doc_name
+            console.print(
+                f"[yellow]Created fallback documentation: "
+                f"{fallback_doc}[/yellow]"
+            )
+            return
+
+        # Step 5: Validate documentation was completed
+        template_path = targets.artifacts_dir / targets.updates_doc_name
+        status = "in_progress"
+
+        try:
+            if template_path.exists():
+                content = template_path.read_text(encoding="utf-8")
+
+                # Parse YAML frontmatter
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        try:
+                            frontmatter = yaml.safe_load(parts[1])
+                            status = frontmatter.get("status", "in_progress")
+                            logger.info(
+                                f"Template documentation status: {status}"
+                            )
+                        except yaml.YAMLError as e:
+                            error_msg = (
+                                f"Failed to parse template frontmatter: {e}"
+                            )
+                            logger.error(error_msg)
+                            # Continue with default status
+        except Exception as e:
+            logger.warning(f"Failed to validate template documentation: {e}")
+
+        # Step 6: Create fallback documentation if needed
+        if status == "in_progress":
+            logger.warning(
+                "Template documentation not updated by Claude "
+                "(status still in_progress)"
+            )
+            console.print(
+                "[yellow]Claude did not complete documentation, "
+                "creating fallback...[/yellow]"
+            )
+
+            _create_fallback_updates_doc(
+                targets=targets,
+                stdout=claude_stdout,
+                stderr=claude_stderr,
+                builder_session_id=builder_session_id,
+            )
+
+            fallback_doc = targets.artifacts_dir / targets.updates_doc_name
+            console.print(
+                f"[yellow]Fallback documentation created: "
+                f"{fallback_doc}[/yellow]"
+            )
+            if error_file_path.exists():
+                console.print(
+                    f"[yellow]Check error log: {error_file_path}[/yellow]"
+                )
+        else:
+            # Success!
+            console.print("[green]Review feedback applied successfully[/green]")
+
+            # Count files modified (if detectable from stdout)
+            modified_files = _detect_modified_files(claude_stdout)
+            if modified_files:
+                console.print(
+                    f"  [dim]• {len(modified_files)} file(s) updated[/dim]"
+                )
+
+            doc_path = targets.artifacts_dir / targets.updates_doc_name
+            console.print(f"  [dim]• Documentation: {doc_path}[/dim]")
+
+            if log_file_path.exists():
+                console.print(f"  [dim]• Log: {log_file_path}[/dim]")
+
+    except FileNotFoundError:
+        # Already logged and displayed
+        raise
+    except yaml.YAMLError as e:
+        error_msg = f"Failed to parse YAML: {e}"
+        logger.error(error_msg)
+        console.print(f"[red]Error: {error_msg}[/red]")
+        raise
+    except OSError as e:
+        error_msg = f"File operation failed: {e}"
+        logger.error(error_msg)
+        console.print(f"[red]Error: {error_msg}[/red]")
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error: {e}"
+        logger.error(error_msg)
+        console.print(f"[red]Error: {error_msg}[/red]")
+        raise
