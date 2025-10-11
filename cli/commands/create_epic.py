@@ -845,8 +845,8 @@ def command(
         console.print(f"[dim]Project root: {context.project_root}[/dim]")
         console.print(f"[dim]Claude dir: {context.claude_dir}[/dim]")
 
-        # Resolve planning doc path
-        planning_doc_resolved = context.resolve_path(planning_doc)
+        # Resolve planning doc path (use the already-resolved path from path_resolver)
+        planning_doc_resolved = context.resolve_path(str(planning_doc_path))
 
         # Build prompt
         builder = PromptBuilder(context)
