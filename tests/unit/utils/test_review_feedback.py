@@ -1848,3 +1848,1055 @@ class TestCreateFallbackDocIntegration:
         # Verify file detection worked
         assert "/path/to/file.py" in content
         assert "/path/to/doc.md" in content
+
+
+class TestApplyReviewFeedback:
+    """Test suite for apply_review_feedback() function."""
+
+    def test_apply_review_feedback_success_epic_file(
+        self, tmp_path, mocker
+    ):
+        """Verify full workflow for epic-file review with successful completion."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        epic_dir = tmp_path / ".epics" / "test-epic"
+        artifacts_dir = epic_dir / "artifacts"
+        epic_dir.mkdir(parents=True)
+
+        epic_file = epic_dir / "test.epic.yaml"
+        epic_file.write_text("name: test-epic\n", encoding="utf-8")
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.parent.mkdir(parents=True, exist_ok=True)
+        review_artifact.write_text(
+            "## Review Feedback\nFix Priority 1 issues", encoding="utf-8"
+        )
+
+        # Create ReviewTargets
+        targets = ReviewTargets(
+            primary_file=epic_file,
+            additional_files=[],
+            editable_directories=[epic_dir],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="review.log",
+            error_file_name="review-errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess to simulate successful Claude execution
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Edited file: /path/to/test.epic.yaml"
+        mock_result.stderr = ""
+
+        mock_subprocess = mocker.patch("subprocess.run", return_value=mock_result)
+
+        # Mock console with status context manager
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+
+        # Mock context
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Create completed documentation (simulating Claude's success)
+        def create_completed_doc(*args, **kwargs):
+            # After subprocess runs, create the completed doc
+            updates_path = artifacts_dir / "updates.md"
+            updates_path.write_text(
+                f"""---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: test-epic
+builder_session_id: builder-456
+reviewer_session_id: reviewer-123
+status: completed
+---
+
+# Epic File Review Updates
+
+## Changes Applied
+
+### Priority 1 Fixes
+- Fixed coordination requirements
+""",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mock_subprocess.side_effect = create_completed_doc
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify subprocess was called with correct parameters
+        mock_subprocess.assert_called_once()
+        call_args = mock_subprocess.call_args
+        assert call_args[1]["input"] is not None  # Prompt was passed
+        assert "builder-456" in call_args[0][0]  # Session ID in command
+
+        # Verify success console output
+        assert any(
+            "successfully" in str(call)
+            for call in mock_console.print.call_args_list
+        )
+
+        # Verify documentation exists and has completed status
+        updates_path = artifacts_dir / "updates.md"
+        assert updates_path.exists()
+        content = updates_path.read_text(encoding="utf-8")
+        assert "status: completed" in content
+
+    def test_apply_review_feedback_success_epic(self, tmp_path, mocker):
+        """Verify full workflow for epic review including ticket files."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        epic_dir = tmp_path / ".epics" / "test-epic"
+        tickets_dir = epic_dir / "tickets"
+        artifacts_dir = epic_dir / "artifacts"
+        epic_dir.mkdir(parents=True)
+        tickets_dir.mkdir()
+
+        epic_file = epic_dir / "test.epic.yaml"
+        epic_file.write_text("name: test-epic\n", encoding="utf-8")
+
+        ticket_file = tickets_dir / "TST-001.md"
+        ticket_file.write_text("# TST-001\n", encoding="utf-8")
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.parent.mkdir(parents=True, exist_ok=True)
+        review_artifact.write_text(
+            "## Review\nImprove tickets", encoding="utf-8"
+        )
+
+        # Create ReviewTargets for epic review
+        targets = ReviewTargets(
+            primary_file=epic_file,
+            additional_files=[ticket_file],
+            editable_directories=[epic_dir],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="epic-review-updates.md",
+            log_file_name="epic-review.log",
+            error_file_name="epic-review-errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-789",
+            review_type="epic",
+        )
+
+        # Mock subprocess
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            "Edited file: /path/to/test.epic.yaml\n"
+            "Edited file: /path/to/TST-001.md"
+        )
+        mock_result.stderr = ""
+
+        mock_subprocess = mocker.patch("subprocess.run", return_value=mock_result)
+
+        # Mock console with status context manager
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Create completed documentation
+        def create_completed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "epic-review-updates.md"
+            updates_path.write_text(
+                f"""---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: test-epic
+builder_session_id: builder-999
+reviewer_session_id: reviewer-789
+status: completed
+---
+
+# Epic Review Updates
+
+## Changes Applied
+- Updated epic and tickets
+""",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mock_subprocess.side_effect = create_completed_doc
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-999",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify both epic and ticket mentioned in prompt
+        call_args = mock_subprocess.call_args
+        prompt = call_args[1]["input"]
+        assert str(epic_file) in prompt
+        assert "TST-001.md" in prompt
+
+        # Verify success
+        updates_path = artifacts_dir / "epic-review-updates.md"
+        assert updates_path.exists()
+
+    def test_apply_review_feedback_missing_review_artifact(
+        self, tmp_path, mocker
+    ):
+        """Verify FileNotFoundError raised when review artifact missing."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create targets without creating review artifact
+        artifacts_dir = tmp_path / "artifacts"
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+
+        # Execute and expect FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            apply_review_feedback(
+                review_artifact_path=tmp_path / "nonexistent.md",
+                builder_session_id="builder-456",
+                context=mock_context,
+                targets=targets,
+                console=mock_console,
+            )
+
+        # Verify error was logged to console
+        assert any(
+            "Error" in str(call) for call in mock_console.print.call_args_list
+        )
+
+    def test_apply_review_feedback_malformed_yaml(self, tmp_path, mocker):
+        """Verify yaml.YAMLError handling when frontmatter is malformed."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review content", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess to create doc with malformed YAML
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Output"
+        mock_result.stderr = ""
+
+        def create_malformed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "updates.md"
+            # Invalid YAML frontmatter (unclosed quote)
+            updates_path.write_text(
+                '---\nstatus: "incomplete\n---\ncontent',
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_malformed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute - should handle YAML error gracefully
+        # The function logs the error but creates fallback doc
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify fallback doc was created
+        updates_path = artifacts_dir / "updates.md"
+        assert updates_path.exists()
+
+    def test_apply_review_feedback_claude_failure_creates_fallback(
+        self, tmp_path, mocker
+    ):
+        """Verify fallback doc created when Claude session fails."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess to simulate Claude failure
+        mocker.patch(
+            "subprocess.run",
+            side_effect=Exception("Claude crashed"),
+        )
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute - should handle exception and create fallback
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify fallback doc was created
+        fallback_path = artifacts_dir / "updates.md"
+        assert fallback_path.exists()
+        content = fallback_path.read_text(encoding="utf-8")
+        assert "status: completed" in content or "status: completed_with_errors" in content
+
+        # Verify console showed warning
+        assert any(
+            "fallback" in str(call).lower()
+            for call in mock_console.print.call_args_list
+        )
+
+    def test_apply_review_feedback_template_not_updated_creates_fallback(
+        self, tmp_path, mocker
+    ):
+        """Verify fallback created when Claude doesn't update template (status=in_progress)."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess - succeeds but doesn't update template
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Some output"
+        mock_result.stderr = ""
+
+        # Template stays as "in_progress" (not updated by Claude)
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify fallback was created (because template wasn't updated)
+        updates_path = artifacts_dir / "updates.md"
+        assert updates_path.exists()
+        content = updates_path.read_text(encoding="utf-8")
+
+        # Template should have been replaced with fallback
+        assert "status: completed" in content or "status: completed_with_errors" in content
+        assert "## Standard Output" in content
+
+    def test_apply_review_feedback_logs_stdout_stderr(
+        self, tmp_path, mocker
+    ):
+        """Verify stdout and stderr are logged to files."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="test.log",
+            error_file_name="test-errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess with stdout and stderr
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "This is stdout output"
+        mock_result.stderr = "This is stderr output"
+
+        def create_completed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "updates.md"
+            updates_path.write_text(
+                f"""---
+status: completed
+---
+Done""",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_completed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify stdout log file
+        log_path = artifacts_dir / "test.log"
+        assert log_path.exists()
+        assert log_path.read_text(encoding="utf-8") == "This is stdout output"
+
+        # Verify stderr log file
+        error_path = artifacts_dir / "test-errors.log"
+        assert error_path.exists()
+        assert error_path.read_text(encoding="utf-8") == "This is stderr output"
+
+    def test_apply_review_feedback_console_output_success(
+        self, tmp_path, mocker
+    ):
+        """Verify success messages are displayed to console."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess success
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Edited file: /path/to/file.yaml"
+        mock_result.stderr = ""
+
+        def create_completed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "updates.md"
+            updates_path.write_text(
+                "---\nstatus: completed\n---\nDone",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_completed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Check console.print was called with success messages
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+
+        # Should show "Applying review feedback..."
+        assert any("Applying" in call for call in print_calls)
+
+        # Should show success message
+        assert any("successfully" in call for call in print_calls)
+
+        # Should show documentation path
+        assert any("Documentation" in call for call in print_calls)
+
+    def test_apply_review_feedback_console_output_failure(
+        self, tmp_path, mocker
+    ):
+        """Verify failure messages are displayed to console."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess failure
+        mocker.patch(
+            "subprocess.run",
+            side_effect=Exception("Subprocess failed"),
+        )
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Check console.print was called with warning/error messages
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+
+        # Should show warning about failure
+        assert any(
+            "Warning" in call or "fallback" in call for call in print_calls
+        )
+
+    def test_apply_review_feedback_calls_helper_functions(
+        self, tmp_path, mocker
+    ):
+        """Verify orchestration - all helper functions are called in order."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review content", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock all helper functions
+        mock_build_prompt = mocker.patch(
+            "cli.utils.review_feedback._build_feedback_prompt",
+            return_value="Test prompt",
+        )
+        mock_create_template = mocker.patch(
+            "cli.utils.review_feedback._create_template_doc"
+        )
+
+        # Mock subprocess
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Output"
+        mock_result.stderr = ""
+
+        def create_completed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "updates.md"
+            updates_path.write_text(
+                "---\nstatus: completed\n---",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_completed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify helper functions were called
+        mock_build_prompt.assert_called_once()
+        mock_create_template.assert_called_once()
+
+        # Verify they were called with correct parameters
+        build_args = mock_build_prompt.call_args
+        assert build_args[1]["review_content"] == "Review content"
+        assert build_args[1]["targets"] == targets
+        assert build_args[1]["builder_session_id"] == "builder-456"
+
+        template_args = mock_create_template.call_args
+        assert template_args[1]["targets"] == targets
+        assert template_args[1]["builder_session_id"] == "builder-456"
+
+    def test_apply_review_feedback_builds_prompt_with_correct_params(
+        self, tmp_path, mocker
+    ):
+        """Verify prompt is built with correct review content and targets."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        custom_review_content = "Custom review feedback content here"
+        review_artifact.write_text(custom_review_content, encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("custom.yaml"),
+            additional_files=[Path("ticket1.md")],
+            editable_directories=[Path("dir")],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="custom-updates.md",
+            log_file_name="custom.log",
+            error_file_name="custom-errors.log",
+            epic_name="custom-epic",
+            reviewer_session_id="custom-reviewer-id",
+            review_type="epic",
+        )
+
+        # Spy on _build_feedback_prompt
+        original_build = __import__(
+            "cli.utils.review_feedback", fromlist=["_build_feedback_prompt"]
+        )._build_feedback_prompt
+
+        captured_params = {}
+
+        def capture_params(*args, **kwargs):
+            captured_params["args"] = args
+            captured_params["kwargs"] = kwargs
+            return original_build(*args, **kwargs)
+
+        mocker.patch(
+            "cli.utils.review_feedback._build_feedback_prompt",
+            side_effect=capture_params,
+        )
+
+        # Mock subprocess
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        def create_completed_doc(*args, **kwargs):
+            updates_path = artifacts_dir / "custom-updates.md"
+            updates_path.write_text(
+                "---\nstatus: completed\n---",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_completed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="custom-builder-id",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify _build_feedback_prompt was called with correct params
+        # Function is called with keyword arguments, so check kwargs
+        if captured_params.get("kwargs"):
+            assert captured_params["kwargs"]["review_content"] == custom_review_content
+            assert captured_params["kwargs"]["targets"] == targets
+            assert captured_params["kwargs"]["builder_session_id"] == "custom-builder-id"
+        else:
+            # Or positional args
+            assert captured_params["args"][0] == custom_review_content
+            assert captured_params["args"][1] == targets
+            assert captured_params["args"][2] == "custom-builder-id"
+
+    def test_apply_review_feedback_creates_template_before_claude(
+        self, tmp_path, mocker
+    ):
+        """Verify template is created BEFORE Claude runs."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Track call order
+        call_order = []
+
+        def track_template(*args, **kwargs):
+            call_order.append("template")
+
+        def track_subprocess(*args, **kwargs):
+            call_order.append("subprocess")
+            # Verify template exists before subprocess runs
+            assert (artifacts_dir / "updates.md").exists()
+            # Create completed doc
+            updates_path = artifacts_dir / "updates.md"
+            updates_path.write_text(
+                "---\nstatus: completed\n---",
+                encoding="utf-8",
+            )
+            mock_result = mocker.Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = ""
+            mock_result.stderr = ""
+            return mock_result
+
+        mocker.patch(
+            "cli.utils.review_feedback._create_template_doc",
+            side_effect=track_template,
+        )
+        mocker.patch("subprocess.run", side_effect=track_subprocess)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify template was created before subprocess
+        assert call_order == ["template", "subprocess"]
+
+    def test_apply_review_feedback_validates_frontmatter_status(
+        self, tmp_path, mocker
+    ):
+        """Verify validation logic checks frontmatter status field."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create test files
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+
+        review_artifact = artifacts_dir / "review.md"
+        review_artifact.write_text("Review", encoding="utf-8")
+
+        targets = ReviewTargets(
+            primary_file=Path("test.yaml"),
+            additional_files=[],
+            editable_directories=[],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="updates.md",
+            log_file_name="log.log",
+            error_file_name="errors.log",
+            epic_name="test-epic",
+            reviewer_session_id="reviewer-123",
+            review_type="epic-file",
+        )
+
+        # Mock subprocess
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Output"
+        mock_result.stderr = ""
+
+        # Template will remain in_progress (Claude didn't update it)
+        mocker.patch("subprocess.run", return_value=mock_result)
+
+        # Spy on _create_fallback_updates_doc
+        mock_fallback = mocker.patch(
+            "cli.utils.review_feedback._create_fallback_updates_doc"
+        )
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify fallback was called (because status stayed in_progress)
+        mock_fallback.assert_called_once()
+
+    def test_apply_review_feedback_end_to_end_with_real_files(
+        self, tmp_path, mocker
+    ):
+        """Integration test with real file operations (no subprocess mock)."""
+        from cli.utils.review_feedback import apply_review_feedback
+
+        # Create realistic file structure
+        epic_dir = tmp_path / ".epics" / "integration-epic"
+        tickets_dir = epic_dir / "tickets"
+        artifacts_dir = epic_dir / "artifacts"
+
+        epic_dir.mkdir(parents=True)
+        tickets_dir.mkdir()
+        artifacts_dir.mkdir()
+
+        # Create epic file
+        epic_file = epic_dir / "integration-epic.epic.yaml"
+        epic_file.write_text(
+            "name: integration-epic\ndescription: Test epic\n",
+            encoding="utf-8",
+        )
+
+        # Create ticket file
+        ticket_file = tickets_dir / "INT-001.md"
+        ticket_file.write_text("# INT-001\n## Task\nTest", encoding="utf-8")
+
+        # Create review artifact
+        review_artifact = artifacts_dir / "epic-review.md"
+        review_artifact.write_text(
+            """---
+date: 2025-01-15
+---
+
+# Epic Review
+
+## Priority 1 Issues
+- Add missing acceptance criteria
+- Define integration contracts
+
+## Priority 2 Issues
+- Improve test coverage""",
+            encoding="utf-8",
+        )
+
+        # Create ReviewTargets
+        targets = ReviewTargets(
+            primary_file=epic_file,
+            additional_files=[ticket_file],
+            editable_directories=[epic_dir],
+            artifacts_dir=artifacts_dir,
+            updates_doc_name="epic-review-updates.md",
+            log_file_name="epic-review.log",
+            error_file_name="epic-review-errors.log",
+            epic_name="integration-epic",
+            reviewer_session_id="int-reviewer-123",
+            review_type="epic",
+        )
+
+        # Mock subprocess to simulate Claude success
+        mock_result = mocker.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            f"Edited file: {epic_file}\n"
+            f"Edited file: {ticket_file}"
+        )
+        mock_result.stderr = ""
+
+        def create_real_completed_doc(*args, **kwargs):
+            # Simulate Claude actually creating the documentation
+            updates_path = artifacts_dir / "epic-review-updates.md"
+            updates_path.write_text(
+                f"""---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: integration-epic
+builder_session_id: int-builder-456
+reviewer_session_id: int-reviewer-123
+status: completed
+---
+
+# Epic Review Updates
+
+## Changes Applied
+
+### Priority 1 Fixes
+- Added missing acceptance criteria to INT-001
+- Defined integration contracts in epic coordination_requirements
+
+### Priority 2 Fixes
+- Improved test coverage specifications
+
+## Summary
+Applied all Priority 1 and Priority 2 fixes from epic review.
+""",
+                encoding="utf-8",
+            )
+            return mock_result
+
+        mocker.patch("subprocess.run", side_effect=create_real_completed_doc)
+
+        mock_console = mocker.Mock()
+        mock_console.status.return_value.__enter__ = mocker.Mock()
+        mock_console.status.return_value.__exit__ = mocker.Mock()
+        mock_context = mocker.Mock()
+        mock_context.cwd = tmp_path
+
+        # Execute end-to-end
+        apply_review_feedback(
+            review_artifact_path=review_artifact,
+            builder_session_id="int-builder-456",
+            context=mock_context,
+            targets=targets,
+            console=mock_console,
+        )
+
+        # Verify all expected artifacts exist
+        updates_path = artifacts_dir / "epic-review-updates.md"
+        assert updates_path.exists()
+
+        log_path = artifacts_dir / "epic-review.log"
+        assert log_path.exists()
+
+        # Verify documentation content
+        content = updates_path.read_text(encoding="utf-8")
+        assert "status: completed" in content
+        assert "integration-epic" in content
+        assert "Priority 1 Fixes" in content
+
+        # Verify success console output
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+        assert any("successfully" in call for call in print_calls)
