@@ -211,6 +211,10 @@ fix), Priority 3 (nice to have)]
 added automatically by the build system after review completion. You don't need
 to include them in the frontmatter.
 
+**Important:** This review is for human consumption only - changes will NOT be
+applied automatically. Make your recommendations clear, specific, and actionable
+so the developer can decide which changes to implement manually.
+
 ## Example
 
 ```
