@@ -54,8 +54,18 @@ class PromptBuilder:
         Returns:
             Complete prompt string for Claude CLI execution
         """
+        from pathlib import Path
+
         command_file = self.context.claude_dir / "commands" / "create-epic.md"
-        output_spec = output if output else "auto-generated based on planning doc name"
+
+        # Calculate output path if not provided
+        if output:
+            output_spec = output
+        else:
+            # Auto-generate: same directory as spec, with .epic.yaml extension
+            spec_path = Path(planning_doc)
+            epic_name = spec_path.stem.replace("-spec", "").replace("_spec", "")
+            output_spec = str(spec_path.parent / f"{epic_name}.epic.yaml")
 
         prompt = f"""Read {command_file} and execute the Task Agent Instructions.
 
