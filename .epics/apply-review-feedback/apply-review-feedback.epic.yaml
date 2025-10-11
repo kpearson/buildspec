@@ -1,0 +1,370 @@
+name: Apply Review Feedback Abstraction
+description: |
+  Create a reusable abstraction for applying review feedback that works across
+  different review types (epic-file-review, epic-review, and future review
+  workflows). This refactoring extracts the common pattern from
+  create_epic.py:apply_review_feedback() into a shared utility that both
+  create_epic.py and create_tickets.py can use via dependency injection.
+
+  Non-Goals:
+  - Applying review feedback for review types beyond "epic-file" and "epic"
+  - Validating review artifact structure (assumed correct)
+  - Retrying failed Claude sessions (assumed single attempt)
+  - Preserving backup copies of files before editing
+  - Concurrent review feedback application
+  - CLI command changes (only internal refactoring)
+
+coordination_requirements:
+  - ReviewTargets dataclass must be the single source of truth for all file paths and configuration
+  - All helper functions (_build_feedback_prompt, _create_template_doc, _create_fallback_updates_doc) must accept ReviewTargets as parameter
+  - apply_review_feedback() must not hardcode any file paths or names - all must come from ReviewTargets
+  - Prompt template must vary based on targets.review_type ("epic-file" vs "epic")
+  - Template document must use frontmatter with "status: in_progress" before Claude runs
+  - Fallback documentation must be created when template status remains "in_progress"
+  - Both create_epic.py and create_tickets.py must instantiate ReviewTargets differently but call same function
+  - Module must have minimal external dependencies (pathlib, dataclasses, typing only)
+
+tickets:
+  - id: ARF-001
+    title: Create review_feedback.py utility module with ReviewTargets dataclass
+    description: |
+      Create a new utility module cli/utils/review_feedback.py that contains the
+      ReviewTargets dataclass for dependency injection. This dataclass will specify
+      what files to edit, where to write logs, and metadata for review feedback
+      application.
+
+      The ReviewTargets dataclass should be defined with the following signature:
+      ```python
+      @dataclass
+      class ReviewTargets:
+          primary_file: Path
+          additional_files: List[Path]
+          editable_directories: List[Path]
+          artifacts_dir: Path
+          updates_doc_name: str
+          log_file_name: str
+          error_file_name: str
+          epic_name: str
+          reviewer_session_id: str
+          review_type: Literal["epic-file", "epic"]
+      ```
+
+      The fields represent:
+      - primary_file: Path to main target (epic YAML)
+      - additional_files: List of other files (ticket markdown files)
+      - editable_directories: List of directories containing editable files
+      - artifacts_dir: Path where outputs are written
+      - updates_doc_name: Name of updates documentation file
+      - log_file_name: Name of log file
+      - error_file_name: Name of error file
+      - epic_name: Epic name for documentation
+      - reviewer_session_id: Session ID of reviewer
+      - review_type: "epic-file" or "epic"
+    acceptance_criteria:
+      - New file cli/utils/review_feedback.py exists
+      - ReviewTargets dataclass is defined with all required fields
+      - Type hints are present on all fields
+      - Dataclass has comprehensive docstring explaining its purpose
+      - Module-level imports are minimal and correct
+    dependencies: []
+
+  - id: ARF-002
+    title: Extract _build_feedback_prompt() helper function
+    description: |
+      Extract prompt building logic into a dedicated _build_feedback_prompt() function
+      in the review_feedback.py module. This function should build feedback application
+      prompts dynamically based on ReviewTargets configuration.
+
+      Function signature:
+      ```python
+      def _build_feedback_prompt(review_content: str, targets: ReviewTargets, builder_session_id: str) -> str
+      ```
+
+      The prompt should include:
+      1. Documentation requirement (with file path from targets)
+      2. Task description
+      3. Review content
+      4. Workflow steps
+      5. What to fix (prioritized)
+      6. Important rules (based on targets.review_type)
+      7. Example edits
+      8. Final documentation step
+
+      Dynamic sections should vary based on review_type:
+      - epic-file: Focus on epic YAML coordination requirements
+      - epic: Cover both epic YAML and ticket files
+    acceptance_criteria:
+      - _build_feedback_prompt() function exists with proper signature
+      - Function takes review_content, targets, and builder_session_id as parameters
+      - Prompt template includes all 8 required sections
+      - Dynamic sections correctly vary based on targets.review_type
+      - Function has comprehensive docstring
+      - Type hints are present on all parameters and return value
+    dependencies:
+      - ARF-001
+
+  - id: ARF-003
+    title: Extract _create_template_doc() helper function
+    description: |
+      Create a _create_template_doc() helper function that generates the initial
+      template documentation file with "status: in_progress" frontmatter. This
+      template is created before Claude runs and should be replaced by Claude
+      with the actual documentation.
+
+      Function signature:
+      ```python
+      def _create_template_doc(targets: ReviewTargets, builder_session_id: str) -> None
+      ```
+
+      The template should include frontmatter with this complete schema:
+      ```yaml
+      ---
+      date: YYYY-MM-DD
+      epic: epic-name
+      builder_session_id: uuid
+      reviewer_session_id: uuid
+      status: in_progress
+      ---
+      ```
+
+      The template should also include:
+      - In-progress message indicating Claude is working
+      - Placeholder sections for what will be documented
+    acceptance_criteria:
+      - _create_template_doc() function exists in review_feedback.py
+      - Function takes targets, builder_session_id as parameters
+      - Template file is written to artifacts_dir/updates_doc_name
+      - Template includes proper frontmatter with all required fields
+      - Template has clear in-progress messaging
+      - Function has docstring and type hints
+    dependencies:
+      - ARF-001
+
+  - id: ARF-004
+    title: Extract _create_fallback_updates_doc() helper function
+    description: |
+      Extract the _create_fallback_updates_doc() function from create_epic.py
+      (lines 473-522) into the review_feedback.py module. This function creates
+      fallback documentation when Claude fails to update the template document.
+
+      Function signature:
+      ```python
+      def _create_fallback_updates_doc(targets: ReviewTargets, stdout: str, stderr: str, builder_session_id: str) -> None
+      ```
+
+      The fallback doc should:
+      - Use stdout/stderr logs to document what happened
+      - Mark status as "completed_with_errors" or "completed"
+      - List any errors that occurred
+      - Show what files were modified (if detectable)
+    acceptance_criteria:
+      - _create_fallback_updates_doc() exists in review_feedback.py
+      - Function logic matches current create_epic.py implementation
+      - Function works with ReviewTargets for paths and configuration
+      - Fallback doc includes stdout/stderr analysis
+      - Function has docstring and type hints
+    dependencies:
+      - ARF-001
+
+  - id: ARF-005
+    title: Create main apply_review_feedback() function
+    description: |
+      Create the main apply_review_feedback() function that orchestrates the entire
+      review feedback application workflow.
+
+      Function signature:
+      ```python
+      def apply_review_feedback(
+          review_artifact_path: Path,
+          builder_session_id: str,
+          context: ClaudeContext,
+          targets: ReviewTargets,
+          console: Console
+      ) -> None
+      ```
+
+      This function should:
+      1. Read review artifact
+      2. Build feedback application prompt
+      3. Create template documentation
+      4. Resume builder session with feedback prompt
+      5. Validate documentation was completed
+      6. Create fallback documentation if needed
+
+      Error Handling Requirements:
+      - Catch FileNotFoundError when review artifact is missing
+      - Catch yaml.YAMLError when parsing frontmatter fails
+      - Catch ClaudeRunnerError when Claude session fails
+      - Log errors to targets.error_file_name
+      - Partial failures (e.g., epic updates but ticket files don't) should continue gracefully and be documented
+      - All caught exceptions should be re-raised after cleanup/logging
+
+      Console Output Requirements:
+      - Display "Applying review feedback..." progress message
+      - Show success/failure summary with file change counts
+      - Display path to documentation artifact when complete
+      - Show error messages clearly when failures occur
+    acceptance_criteria:
+      - apply_review_feedback() function exists with correct signature
+      - Function takes review_artifact_path, builder_session_id, context, targets, console
+      - All 6 workflow steps are implemented in order
+      - Function uses ClaudeRunner for session resumption
+      - Function validates template doc was updated by checking frontmatter status
+      - Fallback doc is created if Claude doesn't update template
+      - Function has comprehensive docstring
+      - Type hints present on all parameters
+      - Proper error handling with try/except blocks
+    dependencies:
+      - ARF-001
+      - ARF-002
+      - ARF-003
+      - ARF-004
+
+  - id: ARF-006
+    title: Update cli/utils/__init__.py exports
+    description: |
+      Update the cli/utils/__init__.py file to export the new ReviewTargets dataclass
+      and apply_review_feedback function so they can be easily imported by other modules.
+
+      Use relative imports for consistency:
+      ```python
+      from .review_feedback import ReviewTargets, apply_review_feedback
+      ```
+    acceptance_criteria:
+      - cli/utils/__init__.py imports ReviewTargets from review_feedback
+      - cli/utils/__init__.py imports apply_review_feedback from review_feedback
+      - Exports are added to __all__ list if present
+      - Imports work correctly from other modules
+    dependencies:
+      - ARF-005
+
+  - id: ARF-007
+    title: Refactor create_epic.py to use shared utility
+    description: |
+      Refactor cli/commands/create_epic.py to use the new shared review_feedback
+      utility instead of its local implementation. This involves:
+      1. Removing the local apply_review_feedback() function (lines 524-760)
+      2. Removing the local _create_fallback_updates_doc() (lines 473-522)
+      3. Adding import for shared functions
+      4. Creating ReviewTargets instance at call site
+      5. Calling shared apply_review_feedback()
+
+      The behavior should remain exactly the same for epic-file-review.
+    acceptance_criteria:
+      - Local apply_review_feedback() function removed from create_epic.py
+      - Local _create_fallback_updates_doc() function removed
+      - Import statement added for ReviewTargets and apply_review_feedback
+      - ReviewTargets instance created with correct configuration for epic-file-review
+      - Call to apply_review_feedback() works with ReviewTargets
+      - Epic file review workflow continues to work identically
+      - Net LOC reduction of ~272 lines in create_epic.py
+    dependencies:
+      - ARF-006
+
+  - id: ARF-008
+    title: Integrate review feedback into create_tickets.py
+    description: |
+      Add review feedback application to cli/commands/create_tickets.py after
+      epic-review completes. This enables create_tickets.py to apply epic-review
+      feedback to both the epic YAML file and all ticket markdown files.
+
+      Implementation should:
+      1. Import ReviewTargets and apply_review_feedback
+      2. After invoke_epic_review() succeeds, create ReviewTargets for epic-review
+      3. Call apply_review_feedback() with proper configuration
+      4. Handle errors gracefully (review is optional enhancement)
+    acceptance_criteria:
+      - Import added for ReviewTargets and apply_review_feedback
+      - ReviewTargets created after epic-review with correct configuration
+      - ReviewTargets includes epic YAML as primary_file
+      - ReviewTargets includes all ticket markdown files in additional_files
+      - ReviewTargets specifies tickets/ directory in editable_directories
+      - apply_review_feedback() called with proper error handling
+      - Epic-review feedback is applied to both epic and ticket files
+      - Errors are handled gracefully without failing the command
+      - Net LOC increase of ~27 lines in create_tickets.py
+    dependencies:
+      - ARF-006
+
+  - id: ARF-009
+    title: Create unit tests for review_feedback module
+    description: |
+      Create comprehensive unit tests for the new review_feedback.py module in
+      tests/unit/utils/test_review_feedback.py. Tests should cover all functions
+      and edge cases.
+
+      Required tests:
+      1. test_review_targets_creation() - Dataclass instantiation
+      2. test_review_targets_validation() - Test that ReviewTargets validates required fields
+      3. test_build_feedback_prompt_epic_file() - Epic-file review prompt
+      4. test_build_feedback_prompt_epic() - Epic review prompt
+      5. test_build_feedback_prompt_special_chars() - Test prompt building with special characters in review content
+      6. test_create_template_doc() - Template generation
+      7. test_create_template_doc_directory_exists() - Test when artifacts directory doesn't exist
+      8. test_create_fallback_doc() - Fallback documentation
+      9. test_apply_review_feedback_success() - Successful workflow
+      10. test_apply_review_feedback_missing_artifact() - Error handling
+      11. test_apply_review_feedback_claude_failure() - Fallback doc creation
+      12. test_apply_review_feedback_partial_success() - Test when some files update but others fail
+      13. test_concurrent_review_feedback() - Test thread safety if multiple reviews run in parallel
+    acceptance_criteria:
+      - New file tests/unit/utils/test_review_feedback.py exists
+      - All 13 required test cases implemented
+      - Tests use pytest and proper mocking
+      - Tests cover both epic-file and epic review types
+      - Tests verify prompt template variations
+      - Tests verify fallback doc creation
+      - Tests verify edge cases (special characters, missing directories, partial failures, concurrency)
+      - Tests achieve ≥80% code coverage for review_feedback.py
+      - All tests pass
+    dependencies:
+      - ARF-005
+
+  - id: ARF-010
+    title: Perform integration testing and validation
+    description: |
+      Perform manual integration testing to verify the refactoring works correctly
+      in real scenarios. Test both create-epic and create-tickets workflows with
+      review feedback application.
+
+      Test Fixture:
+      Create test fixture epic in .epics/test-fixtures/simple-epic/ with:
+      - Known input epic specification
+      - Predefined review feedback artifact
+      - Expected output (updated epic YAML and ticket files)
+
+      Tests to perform:
+      1. Run buildspec create-epic with review → verify epic YAML edited
+      2. Run buildspec create-tickets with review → verify tickets + epic edited
+      3. Verify documentation artifacts created correctly
+      4. Verify fallback documentation works when Claude fails
+      5. Verify error handling when review artifact missing
+
+      Pass Criteria:
+      - Epic YAML file contains expected changes from review feedback
+      - Ticket markdown files contain expected changes
+      - Documentation artifact exists and has status: completed
+      - No unexpected errors in log files
+      - Performance: Review application completes in < 30 seconds
+
+      Rollback Strategy:
+      - If critical bugs found, revert to previous implementation
+      - Document all issues in GitHub issues before proceeding
+      - Fix issues and re-run full test suite
+
+      Document any issues found and fix them before completion.
+    acceptance_criteria:
+      - create-epic with epic-file-review works correctly
+      - Epic YAML file is updated based on review feedback
+      - epic-file-review-updates.md documentation is created
+      - create-tickets with epic-review works correctly
+      - Both epic YAML and ticket markdown files are updated
+      - epic-review-updates.md documentation is created
+      - Fallback documentation is created when Claude fails to update template
+      - Error messages are clear when review artifact is missing
+      - All integration tests pass without errors
+      - Integration test results documented
+    dependencies:
+      - ARF-007
+      - ARF-008
+      - ARF-009
