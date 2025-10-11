@@ -551,7 +551,38 @@ Edit ticket description to add function examples in Paragraph 2:
   - push_branch(name: str) -> None: pushes branch to remote"
 ```
 
-Begin by reading the epic file, then make surgical edits to fix Priority 1 issues."""
+Begin by reading the epic file, then make surgical edits to fix Priority 1 issues.
+
+## CRITICAL: Document Your Changes
+
+After making all edits, create a summary document at the path:
+{Path(epic_path).parent}/artifacts/epic-file-review-updates.md
+
+This document should contain:
+
+```markdown
+# Epic File Review Updates
+
+**Date**: [current date]
+**Epic**: [epic name]
+**Review Session**: {reviewer_session_id if 'reviewer_session_id' in review_content else 'unknown'}
+
+## Changes Applied
+
+### Priority 1 Fixes
+[List each Priority 1 issue that was fixed, with specific changes made]
+
+### Priority 2 Fixes
+[List each Priority 2 issue that was fixed, with specific changes made]
+
+## Changes Not Applied
+[List any recommended changes that were NOT applied and why]
+
+## Summary
+[1-2 sentences describing the overall improvements made to the epic]
+```
+
+Use the Write tool to create this documentation file."""
 
     # Execute feedback application by resuming builder session
     runner = ClaudeRunner(context)
@@ -590,6 +621,15 @@ Begin by reading the epic file, then make surgical edits to fix Priority 1 issue
                 console.print(
                     "[yellow]⚠ Epic file may not have been modified[/yellow]"
                 )
+
+        # Check for updates documentation
+        updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
+        if updates_doc.exists():
+            console.print(f"[dim]Updates documented: {updates_doc}[/dim]")
+        else:
+            console.print(
+                "[yellow]⚠ No updates documentation found (epic-file-review-updates.md)[/yellow]"
+            )
     else:
         console.print(
             "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
