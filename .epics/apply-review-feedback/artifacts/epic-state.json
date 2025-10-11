@@ -2,12 +2,15 @@
   "epic_id": "apply-review-feedback",
   "epic_branch": "apply-review-feedback",
   "baseline_commit": "8c20f274e288e6e4a69a28553e8fd40d8858b93d",
-  "status": "in-progress",
+  "final_commit": "8ed344a8c68ab15ee9646f820a899da77fae03ff",
+  "status": "completed",
   "started_at": "2025-10-11T21:07:17Z",
+  "completed_at": "2025-10-11T22:03:08Z",
   "session_id": "47701c89-af98-42cb-83c5-91c38d290a15",
   "tickets": {
     "ARF-001": {
       "path": ".epics/apply-review-feedback/tickets/ARF-001.md",
+      "title": "Create review_feedback.py utility module with ReviewTargets dataclass",
       "depends_on": [],
       "critical": true,
       "status": "completed",
@@ -22,6 +25,7 @@
     },
     "ARF-002": {
       "path": ".epics/apply-review-feedback/tickets/ARF-002.md",
+      "title": "Extract _build_feedback_prompt() helper function",
       "depends_on": ["ARF-001"],
       "critical": true,
       "status": "completed",
@@ -36,6 +40,7 @@
     },
     "ARF-003": {
       "path": ".epics/apply-review-feedback/tickets/ARF-003.md",
+      "title": "Extract _create_template_doc() helper function",
       "depends_on": ["ARF-001"],
       "critical": true,
       "status": "completed",
@@ -50,6 +55,7 @@
     },
     "ARF-004": {
       "path": ".epics/apply-review-feedback/tickets/ARF-004.md",
+      "title": "Extract _create_fallback_updates_doc() helper function",
       "depends_on": ["ARF-001"],
       "critical": true,
       "status": "completed",
@@ -64,68 +70,100 @@
     },
     "ARF-005": {
       "path": ".epics/apply-review-feedback/tickets/ARF-005.md",
+      "title": "Create main apply_review_feedback() function",
       "depends_on": ["ARF-001", "ARF-002", "ARF-003", "ARF-004"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "fa795e73b529ac205b59d94f164a223cd1e86c83",
+        "branch_name": "ticket/ARF-005",
+        "final_commit": "0bde843e1d387c956ede10ab89a7c6a4ea0ace10"
+      },
+      "started_at": "2025-10-11T21:24:55Z",
+      "completed_at": "2025-10-11T21:35:00Z"
     },
     "ARF-006": {
       "path": ".epics/apply-review-feedback/tickets/ARF-006.md",
+      "title": "Update cli/utils/__init__.py exports",
       "depends_on": ["ARF-005"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null,
-      "waiting_for": ["ARF-005.completed"]
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "0bde843e1d387c956ede10ab89a7c6a4ea0ace10",
+        "branch_name": "ticket/ARF-006",
+        "final_commit": "83c46be6a015ecc6d63756e49deae64b6f988d41"
+      },
+      "started_at": "2025-10-11T21:35:00Z",
+      "completed_at": "2025-10-11T21:40:00Z"
     },
     "ARF-007": {
       "path": ".epics/apply-review-feedback/tickets/ARF-007.md",
+      "title": "Refactor create_epic.py to use shared utility",
       "depends_on": ["ARF-006"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null,
-      "waiting_for": ["ARF-006.completed"]
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "83c46be6a015ecc6d63756e49deae64b6f988d41",
+        "branch_name": "ticket/ARF-007",
+        "final_commit": "3c633d1a6ccc520ce07c23d7216ae071e7f6396b"
+      },
+      "started_at": "2025-10-11T21:40:00Z",
+      "completed_at": "2025-10-11T21:48:00Z"
     },
     "ARF-008": {
       "path": ".epics/apply-review-feedback/tickets/ARF-008.md",
+      "title": "Integrate review feedback into create_tickets.py",
       "depends_on": ["ARF-006"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null,
-      "waiting_for": ["ARF-006.completed"]
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "83c46be6a015ecc6d63756e49deae64b6f988d41",
+        "branch_name": "ticket/ARF-008",
+        "final_commit": "995122a127cde504202516ce6f31a4a4e4c17d13"
+      },
+      "started_at": "2025-10-11T21:40:00Z",
+      "completed_at": "2025-10-11T21:48:00Z"
     },
     "ARF-009": {
       "path": ".epics/apply-review-feedback/tickets/ARF-009.md",
+      "title": "Create unit tests for review_feedback module",
       "depends_on": ["ARF-005"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null,
-      "waiting_for": ["ARF-005.completed"]
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "2ad026af2411cdd989822a94ca180ed0b75e3081",
+        "branch_name": "ticket/ARF-009",
+        "final_commit": "eef2b0398a44e3277bcfcbb272cb504717d58404"
+      },
+      "started_at": "2025-10-11T21:48:00Z",
+      "completed_at": "2025-10-11T21:55:00Z"
     },
     "ARF-010": {
       "path": ".epics/apply-review-feedback/tickets/ARF-010.md",
+      "title": "Perform integration testing and validation",
       "depends_on": ["ARF-007", "ARF-008", "ARF-009"],
       "critical": true,
-      "status": "pending",
-      "phase": "not-started",
-      "git_info": null,
-      "started_at": null,
-      "completed_at": null,
-      "waiting_for": ["ARF-007.completed", "ARF-008.completed", "ARF-009.completed"]
+      "status": "completed",
+      "phase": "completed",
+      "git_info": {
+        "base_commit": "eef2b0398a44e3277bcfcbb272cb504717d58404",
+        "branch_name": "ticket/ARF-010",
+        "final_commit": "8ed344a8c68ab15ee9646f820a899da77fae03ff"
+      },
+      "started_at": "2025-10-11T21:55:00Z",
+      "completed_at": "2025-10-11T22:03:08Z"
     }
+  },
+  "summary": {
+    "total_tickets": 10,
+    "completed_tickets": 10,
+    "failed_tickets": 0,
+    "total_duration_minutes": 56,
+    "parallel_execution_phases": 2
   }
 }
