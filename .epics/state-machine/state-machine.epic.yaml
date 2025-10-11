@@ -1,0 +1,753 @@
+epic: "Python State Machine for Epic Execution Enforcement"
+description: "Implement a deterministic Python state machine that enforces epic ticket execution rules, replacing LLM-driven coordination. The state machine acts as a programmatic gatekeeper, managing git strategies (stacked branches with final collapse), state transitions, and validation gates. LLM agents interact via CLI commands only, focusing solely on implementing ticket requirements while the state machine ensures correctness and consistency."
+ticket_count: 15
+
+acceptance_criteria:
+  - "State machine enforces all state transitions through programmatic gates (no LLM bypass possible)"
+  - "Git operations (branch creation, base commit calculation, merging) are deterministic and produce identical results across runs"
+  - "CLI commands provide JSON API for LLM orchestrator interaction without direct state file access"
+  - "State machine can resume execution from epic-state.json after crashes or interruptions"
+  - "Integration tests verify state machine enforces all invariants (stacked branches, dependency ordering, validation gates)"
+  - "Epic execution with same tickets produces identical git structure (deterministic behavior)"
+  - "All state transitions and gate checks are logged for debugging and auditability"
+
+rollback_on_failure: true
+
+coordination_requirements:
+  function_profiles:
+    EpicStateMachine:
+      __init__:
+        arity: 2
+        intent: "Initialize state machine from epic file or resume from existing state"
+        signature: "__init__(epic_file: Path, resume: bool = False)"
+      get_ready_tickets:
+        arity: 0
+        intent: "Return tickets ready for execution with dependencies met and concurrency slots available"
+        signature: "get_ready_tickets() -> List[Ticket]"
+      start_ticket:
+        arity: 1
+        intent: "Create branch from correct base commit, transition ticket to IN_PROGRESS, return working context"
+        signature: "start_ticket(ticket_id: str) -> Dict[str, Any]"
+      complete_ticket:
+        arity: 4
+        intent: "Validate LLM work through gates, transition to COMPLETED if passed (no merge yet)"
+        signature: "complete_ticket(ticket_id: str, final_commit: str, test_suite_status: str, acceptance_criteria: List[Dict]) -> bool"
+      finalize_epic:
+        arity: 0
+        intent: "Collapse all ticket branches into epic branch via squash merge, cleanup branches, push to remote"
+        signature: "finalize_epic() -> Dict[str, Any]"
+      fail_ticket:
+        arity: 2
+        intent: "Mark ticket as FAILED, block dependents, trigger rollback if critical"
+        signature: "fail_ticket(ticket_id: str, reason: str)"
+      get_epic_status:
+        arity: 0
+        intent: "Return current epic state and all ticket states for monitoring"
+        signature: "get_epic_status() -> Dict[str, Any]"
+      all_tickets_completed:
+        arity: 0
+        intent: "Check if all non-blocked/failed tickets are complete for finalization"
+        signature: "all_tickets_completed() -> bool"
+
+    TransitionGate:
+      check:
+        arity: 2
+        intent: "Validate state transition is allowed, return result with pass/fail and optional reason"
+        signature: "check(ticket: Ticket, context: EpicContext) -> GateResult"
+
+    GitOperations:
+      create_branch:
+        arity: 2
+        intent: "Create git branch from specified base commit"
+        signature: "create_branch(branch_name: str, base_commit: str)"
+      push_branch:
+        arity: 1
+        intent: "Push branch to remote repository"
+        signature: "push_branch(branch_name: str)"
+      branch_exists_remote:
+        arity: 1
+        intent: "Check if branch exists on remote"
+        signature: "branch_exists_remote(branch_name: str) -> bool"
+      commit_exists:
+        arity: 1
+        intent: "Verify commit SHA exists in repository"
+        signature: "commit_exists(commit_sha: str) -> bool"
+      commit_on_branch:
+        arity: 2
+        intent: "Check if commit is reachable from branch"
+        signature: "commit_on_branch(commit_sha: str, branch_name: str) -> bool"
+      get_commits_between:
+        arity: 2
+        intent: "Get list of commits between base and head"
+        signature: "get_commits_between(base: str, head: str) -> List[str]"
+      merge_branch:
+        arity: 4
+        intent: "Merge source branch into target with specified strategy and message"
+        signature: "merge_branch(source: str, target: str, strategy: str, message: str) -> str"
+      delete_branch:
+        arity: 2
+        intent: "Delete branch locally and optionally on remote"
+        signature: "delete_branch(branch_name: str, remote: bool = False)"
+      find_most_recent_commit:
+        arity: 1
+        intent: "Find most recent commit by timestamp from list of commit SHAs"
+        signature: "find_most_recent_commit(commits: List[str]) -> str"
+
+  directory_structure:
+    required_paths:
+      - "buildspec/epic/models.py"
+      - "buildspec/epic/gates.py"
+      - "buildspec/epic/state_machine.py"
+      - "buildspec/epic/git_operations.py"
+      - "buildspec/cli/epic_commands.py"
+      - "tests/epic/test_state_machine.py"
+      - "tests/epic/test_gates.py"
+      - "tests/epic/test_git_operations.py"
+      - "tests/epic/integration/"
+    organization_patterns:
+      models: "Data classes and enums in buildspec/epic/models.py"
+      gates: "Gate interface and implementations in buildspec/epic/gates.py"
+      state_machine: "Core state machine logic in buildspec/epic/state_machine.py"
+      git_operations: "Git wrapper functions in buildspec/epic/git_operations.py"
+      cli: "Click commands in buildspec/cli/epic_commands.py"
+      tests: "Mirror source structure under tests/"
+    shared_locations:
+      state_file: ".epics/[epic-name]/artifacts/epic-state.json"
+      epic_file: ".epics/[epic-name]/[epic-name].epic.yaml"
+
+  breaking_changes_prohibited:
+    - "CLI command signatures (must version if changing)"
+    - "epic-state.json schema (must provide backward compatibility)"
+    - "State machine public API methods (get_ready_tickets, start_ticket, complete_ticket, etc.)"
+    - "Gate interface protocol (check method signature)"
+
+  architectural_decisions:
+    technology_choices:
+      - "Python 3.8+ for state machine implementation"
+      - "Click framework for CLI commands"
+      - "JSON for state persistence with atomic writes"
+      - "Subprocess for git operations (not GitPython to reduce dependencies)"
+    patterns:
+      - "State pattern with explicit enum states and transition validation"
+      - "Gate pattern for validation before state transitions"
+      - "Protocol/interface pattern for extensible gates"
+      - "Command pattern for CLI with JSON I/O"
+      - "Repository pattern for state file persistence"
+    constraints:
+      - "Synchronous execution only (concurrency = 1)"
+      - "No direct state file access by LLM (CLI commands only)"
+      - "Stacked branches (each ticket branches from previous final commit)"
+      - "Deferred merging (all merges happen in finalize phase)"
+      - "Squash merge strategy for clean epic branch history"
+
+  performance_contracts:
+    cli_response_time: "CLI commands must complete in < 1 second for orchestrator responsiveness"
+    state_file_writes: "Atomic writes using temp file + rename to prevent corruption"
+    git_operations: "Must handle large repositories efficiently (avoid full history scans)"
+
+  security_constraints:
+    - "Sanitize all git command inputs to prevent shell injection"
+    - "Validate commit SHAs match expected format before git operations"
+    - "Validate state file JSON schema on load to prevent injection"
+    - "No execution of arbitrary code from state file or epic file"
+
+  integration_contracts:
+    core-models:
+      provides:
+        - "TicketState enum with 8 states"
+        - "EpicState enum with 6 states"
+        - "Ticket dataclass with all state fields"
+        - "GitInfo dataclass for branch information"
+        - "GateResult dataclass for validation results"
+      consumes: []
+      interfaces:
+        - "Enum types imported by state machine, gates, CLI"
+        - "Dataclasses used throughout system"
+
+    gate-interface:
+      provides:
+        - "TransitionGate Protocol with check method"
+        - "GateResult structure for pass/fail with reason"
+      consumes:
+        - "Ticket and EpicContext from models"
+      interfaces:
+        - "Protocol allows implementing new gates without modifying core"
+
+    git-wrapper:
+      provides:
+        - "All git operations (create_branch, merge_branch, etc.)"
+        - "Git command error handling and result parsing"
+      consumes: []
+      interfaces:
+        - "Called by state machine for all git interactions"
+        - "Raises GitError on failures"
+
+    state-machine-core:
+      provides:
+        - "Public API methods for LLM orchestrator"
+        - "State transition enforcement"
+        - "Gate execution and validation"
+        - "State file persistence"
+      consumes:
+        - "Models (Ticket, states, etc.)"
+        - "Gates for validation"
+        - "GitOperations for branch management"
+      interfaces:
+        - "Public API called by CLI commands"
+        - "Private methods for state management"
+
+    cli-commands:
+      provides:
+        - "JSON API for LLM orchestrator"
+        - "Error handling with clear messages"
+        - "Command-line interface for all operations"
+      consumes:
+        - "EpicStateMachine public API"
+      interfaces:
+        - "Click commands returning JSON to stdout"
+        - "Error messages to stderr"
+
+    gate-implementations:
+      provides:
+        - "DependenciesMetGate for dependency checking"
+        - "CreateBranchGate for branch creation"
+        - "LLMStartGate for concurrency enforcement"
+        - "ValidationGate for completion validation"
+      consumes:
+        - "TransitionGate protocol"
+        - "GitOperations for git checks"
+        - "EpicContext for state access"
+      interfaces:
+        - "Each gate implements check method"
+        - "Used by state machine during transitions"
+
+tickets:
+  - id: core-models
+    description: |
+      As a state machine developer, I want clearly defined state enums and data classes so that all components use consistent state representations and type-safe data structures throughout the epic execution system.
+
+      This ticket creates the foundational data models for the state machine. Key structures to implement:
+      - TicketState(Enum): PENDING, READY, BRANCH_CREATED, IN_PROGRESS, AWAITING_VALIDATION, COMPLETED, FAILED, BLOCKED
+      - EpicState(Enum): INITIALIZING, EXECUTING, MERGING, FINALIZED, FAILED, ROLLED_BACK
+      - Ticket: Dataclass with id, path, title, depends_on, critical, state, git_info, test_suite_status, acceptance_criteria, failure_reason, blocking_dependency, started_at, completed_at
+      - GitInfo: Dataclass with branch_name, base_commit, final_commit
+      - GateResult: Dataclass with passed (bool), reason (Optional[str]), metadata (dict)
+      - AcceptanceCriterion: Dataclass with criterion (str), met (bool)
+      - Custom exceptions: StateTransitionError, GitError, StateError
+
+      Acceptance criteria:
+      1. All enum states defined with auto() values
+      2. All dataclasses include type hints and optional defaults
+      3. Dataclasses support JSON serialization/deserialization
+      4. Custom exceptions inherit from appropriate base classes
+      5. Module is importable without errors
+
+      Testing requirements:
+      - Unit tests verify enum values are unique
+      - Tests confirm dataclasses can be instantiated with all field combinations
+      - JSON serialization round-trip tests for all dataclasses
+      - Exception classes can be raised and caught correctly
+
+      Non-goals: State transition logic, validation, or business rules (those belong in state machine and gates).
+
+    depends_on: []
+    critical: true
+    coordination_role: "Provides core data structures consumed by all other components (state machine, gates, CLI)"
+
+  - id: gate-interface
+    description: |
+      As a state machine developer, I want a clean gate interface protocol so that validation logic can be added or modified without changing the state machine core.
+
+      This ticket establishes the Protocol interface for transition gates. The gate pattern enables validation checks before state transitions without coupling validation logic to the state machine. Key functions to implement:
+      - TransitionGate: Protocol class with check(ticket: Ticket, context: EpicContext) -> GateResult method
+      - EpicContext: Dataclass providing state machine context to gates (tickets dict, epic config, git operations, helper methods)
+      - BaseGate: Abstract base class implementing common gate functionality (logging, error handling)
+
+      The TransitionGate protocol allows any class implementing the check method to act as a validation gate. EpicContext encapsulates all information gates need to perform checks without accessing state machine internals directly.
+
+      Acceptance criteria:
+      1. TransitionGate defined as Protocol with check method signature
+      2. EpicContext includes all fields needed by gates (tickets, config, git wrapper)
+      3. BaseGate provides reusable gate functionality
+      4. Protocol can be imported and used by gate implementations
+      5. Type hints ensure gate implementations match protocol
+
+      Testing requirements:
+      - Unit test creating mock gate implementing protocol
+      - Test BaseGate provides expected helper methods
+      - Test EpicContext can be instantiated with required fields
+      - Type checker verifies protocol compliance
+
+      Non-goals: Specific gate implementations (those are separate tickets), state machine integration.
+
+    depends_on: ["core-models"]
+    critical: true
+    coordination_role: "Provides Protocol interface for all gate implementations; consumed by state machine core"
+
+  - id: git-wrapper
+    description: |
+      As a state machine developer, I want a reliable git operations wrapper so that all git commands are executed consistently with proper error handling and result parsing.
+
+      This ticket creates a GitOperations class that wraps all git commands using subprocess. This isolates git complexity and provides a testable interface. Key functions to implement:
+      - create_branch(branch_name: str, base_commit: str): Creates branch from commit using git checkout -b
+      - push_branch(branch_name: str): Pushes branch to remote using git push -u origin
+      - branch_exists_remote(branch_name: str) -> bool: Checks if branch exists using git ls-remote
+      - commit_exists(commit_sha: str) -> bool: Verifies commit with git cat-file -t
+      - commit_on_branch(commit_sha: str, branch_name: str) -> bool: Checks reachability with git merge-base
+      - get_commits_between(base: str, head: str) -> List[str]: Gets commit list with git log
+      - merge_branch(source: str, target: str, strategy: str, message: str) -> str: Merges with git merge --squash or --no-ff
+      - delete_branch(branch_name: str, remote: bool): Deletes branch using git branch -d and git push origin --delete
+      - find_most_recent_commit(commits: List[str]) -> str: Sorts commits by timestamp using git log --format=%ct
+
+      All methods use subprocess.run with check=True, capture stdout/stderr, and raise GitError on failure. Input sanitization prevents shell injection.
+
+      Acceptance criteria:
+      1. All git operations use subprocess (not GitPython library)
+      2. Input parameters are sanitized to prevent shell injection
+      3. All commands raise GitError with stderr message on failure
+      4. Return values are parsed from git output correctly
+      5. Commands work in both bare and regular repositories
+
+      Testing requirements:
+      - Unit tests with mock subprocess calls verify command construction
+      - Integration tests in real git repo verify functionality
+      - Error handling tests confirm GitError raised on failures
+      - Input sanitization tests prevent injection attacks
+
+      Non-goals: State machine integration, branching strategy logic (that's in state machine), git configuration management.
+
+    depends_on: ["core-models"]
+    critical: true
+    coordination_role: "Provides git operations interface consumed by state machine and gates"
+
+  - id: state-machine-core
+    description: |
+      As an epic orchestrator, I want a deterministic state machine that enforces all execution rules so that epic execution is consistent and predictable regardless of LLM behavior.
+
+      This ticket implements the EpicStateMachine class, the heart of the enforcement system. The state machine owns epic-state.json, enforces transition rules, and provides the public API for the LLM orchestrator. Key functions to implement:
+      - __init__(epic_file: Path, resume: bool): Load epic YAML, initialize or resume from state file
+      - get_ready_tickets() -> List[Ticket]: Check dependencies, transition PENDING->READY, return sorted by priority
+      - start_ticket(ticket_id: str) -> Dict: Run CreateBranchGate, transition READY->BRANCH_CREATED->IN_PROGRESS, return branch info
+      - complete_ticket(ticket_id: str, final_commit: str, test_suite_status: str, acceptance_criteria: List[Dict]) -> bool: Run ValidationGate, transition IN_PROGRESS->AWAITING_VALIDATION->COMPLETED, return success
+      - finalize_epic() -> Dict: Topological sort tickets, squash merge each into epic branch, cleanup, push to remote
+      - fail_ticket(ticket_id: str, reason: str): Transition to FAILED, block dependents, trigger rollback if critical
+      - get_epic_status() -> Dict: Return epic state and all ticket states as JSON
+      - all_tickets_completed() -> bool: Check if finalization can proceed
+      - _transition_ticket(ticket_id: str, new_state: TicketState): Validate transition, update state, log, save
+      - _run_gate(ticket: Ticket, gate: TransitionGate) -> GateResult: Execute gate, log result
+      - _save_state(): Atomic JSON write using temp file + rename
+      - _load_state(): Load and validate epic-state.json
+      - _handle_ticket_failure(ticket: Ticket): Block dependents, check epic failure condition
+      - _calculate_dependency_depth(ticket: Ticket) -> int: Calculate depth for priority sorting
+      - _topological_sort(tickets: List[Ticket]) -> List[Ticket]: Sort by dependencies
+      - _find_dependents(ticket_id: str) -> List[str]: Find all tickets depending on this one
+
+      The state machine validates all transitions, executes gates before allowing state changes, and maintains epic-state.json as the single source of truth.
+
+      Acceptance criteria:
+      1. State machine initializes from epic YAML and creates initial state file
+      2. Resume mode loads existing state file and continues execution
+      3. All state transitions validated against allowed transition rules
+      4. Gates executed before transitions, failures prevent state changes
+      5. State file written atomically on every state change
+      6. All transitions logged with timestamp and details
+      7. Public API methods return well-formed JSON structures
+
+      Testing requirements:
+      - Unit tests for each public API method with mock dependencies
+      - State transition validation tests (invalid transitions rejected)
+      - Gate execution tests (failures prevent transitions)
+      - State persistence tests (atomic writes, resume functionality)
+      - Dependency handling tests (depth calculation, topological sort)
+      - Error recovery tests (rollback, blocking dependents)
+
+      Non-goals: CLI commands (separate ticket), specific gate implementations (separate tickets), LLM orchestrator logic.
+
+    depends_on: ["core-models", "gate-interface", "git-wrapper"]
+    critical: true
+    coordination_role: "Provides public API consumed by CLI commands; orchestrates gates and git operations"
+
+  - id: gate-dependencies-met
+    description: |
+      As a state machine, I want to verify all ticket dependencies are complete before allowing execution so that tickets never run with missing prerequisites.
+
+      This ticket implements DependenciesMetGate which validates the PENDING->READY transition. The gate checks that all tickets in depends_on list are in COMPLETED state. Key function to implement:
+      - check(ticket: Ticket, context: EpicContext) -> GateResult: Iterate through ticket.depends_on, verify each dependency is COMPLETED, return GateResult with pass/fail and reason
+
+      Note: The gate checks for COMPLETED state, not MERGED. In the deferred merging strategy, tickets are marked COMPLETED after validation but before merging into the epic branch. Merging happens later in the finalize phase.
+
+      Acceptance criteria:
+      1. Gate returns passed=True when all dependencies are COMPLETED
+      2. Gate returns passed=False with reason when any dependency is not COMPLETED
+      3. Gate handles empty depends_on list (no dependencies = always pass)
+      4. Reason message lists which dependencies are incomplete
+      5. Gate uses EpicContext to look up dependency states
+
+      Testing requirements:
+      - Unit test with all dependencies COMPLETED (gate passes)
+      - Unit test with one dependency PENDING (gate fails)
+      - Unit test with no dependencies (gate passes)
+      - Unit test with multiple dependencies in various states
+      - Test reason message format is clear
+
+      Non-goals: State transition logic (state machine handles that), other gate types.
+
+    depends_on: ["core-models", "gate-interface"]
+    critical: true
+    coordination_role: "Consumed by state machine during PENDING->READY transition"
+
+  - id: gate-create-branch
+    description: |
+      As a state machine, I want to create ticket branches from the correct base commit using a deterministic algorithm so that stacked branches are built correctly.
+
+      This ticket implements CreateBranchGate which handles the READY->BRANCH_CREATED transition. The gate calculates base commit (epic baseline for first ticket, previous dependency's final commit for stacked tickets) and creates the git branch. Key functions to implement:
+      - check(ticket: Ticket, context: EpicContext) -> GateResult: Calculate base commit, create branch, push to remote, return result with metadata
+      - _calculate_base_commit(ticket: Ticket, context: EpicContext) -> str: Deterministic algorithm for stacking
+        - No dependencies: return context.epic_baseline_commit
+        - Single dependency: return dependency.git_info.final_commit
+        - Multiple dependencies: return context.git.find_most_recent_commit([dep commits])
+
+      The base commit calculation is critical for stacked branches. Each ticket must branch from the correct point to see previous ticket changes.
+
+      Acceptance criteria:
+      1. Gate calculates base commit correctly for all dependency scenarios
+      2. Branch created with naming convention "ticket/{ticket-id}"
+      3. Branch pushed to remote successfully
+      4. GateResult includes branch_name and base_commit in metadata
+      5. Gate fails gracefully if git operations fail
+      6. Safety check: dependencies must be COMPLETED with valid final_commit
+
+      Testing requirements:
+      - Unit test base commit calculation for no dependencies (uses baseline)
+      - Unit test single dependency (uses dependency final commit)
+      - Unit test multiple dependencies (uses most recent)
+      - Integration test creates actual git branch
+      - Test error handling when git operations fail
+      - Test safety checks reject incomplete dependencies
+
+      Non-goals: Merging logic, validation of ticket work, other gates.
+
+    depends_on: ["core-models", "gate-interface", "git-wrapper"]
+    critical: true
+    coordination_role: "Consumed by state machine during READY->BRANCH_CREATED transition; critical for stacking strategy"
+
+  - id: gate-llm-start
+    description: |
+      As a state machine, I want to enforce concurrency limits and verify branch readiness before allowing LLM execution so that synchronous execution is guaranteed.
+
+      This ticket implements LLMStartGate which validates the BRANCH_CREATED->IN_PROGRESS transition. The gate enforces synchronous execution (only 1 ticket in progress at a time) and verifies the branch exists on remote. Key function to implement:
+      - check(ticket: Ticket, context: EpicContext) -> GateResult: Count tickets in IN_PROGRESS or AWAITING_VALIDATION states, reject if >= 1, verify branch exists on remote, return pass/fail
+
+      The concurrency enforcement is hardcoded to 1 for synchronous execution. The gate uses context to count active tickets and git operations to verify branch existence.
+
+      Acceptance criteria:
+      1. Gate returns passed=False if another ticket is IN_PROGRESS or AWAITING_VALIDATION
+      2. Gate returns passed=False if branch doesn't exist on remote
+      3. Gate returns passed=True only when concurrency slot available and branch exists
+      4. Reason message clearly explains why gate failed
+      5. Gate uses context.count_tickets_in_states() helper method
+
+      Testing requirements:
+      - Unit test with no active tickets (gate passes)
+      - Unit test with one ticket IN_PROGRESS (gate fails)
+      - Unit test with one ticket AWAITING_VALIDATION (gate fails)
+      - Unit test with branch missing on remote (gate fails)
+      - Test reason messages are descriptive
+
+      Non-goals: Branch creation (handled by CreateBranchGate), validation of ticket work, other gates.
+
+    depends_on: ["core-models", "gate-interface", "git-wrapper"]
+    critical: true
+    coordination_role: "Consumed by state machine during BRANCH_CREATED->IN_PROGRESS transition; enforces synchronous execution"
+
+  - id: gate-validation
+    description: |
+      As a state machine, I want comprehensive validation of LLM work before marking tickets complete so that only properly implemented tickets advance to COMPLETED state.
+
+      This ticket implements ValidationGate which handles the AWAITING_VALIDATION->COMPLETED transition. The gate runs multiple checks: branch has commits, final commit exists and is on branch, tests pass, and acceptance criteria are met. Key functions to implement:
+      - check(ticket: Ticket, context: EpicContext) -> GateResult: Run all validation checks, return first failure or overall pass
+      - _check_branch_has_commits(ticket: Ticket, context: EpicContext) -> GateResult: Verify commits between base and branch
+      - _check_final_commit_exists(ticket: Ticket, context: EpicContext) -> GateResult: Verify final_commit SHA is valid and on branch
+      - _check_tests_pass(ticket: Ticket, context: EpicContext) -> GateResult: Verify test_suite_status is "passing" or "skipped" (with critical check)
+      - _check_acceptance_criteria(ticket: Ticket, context: EpicContext) -> GateResult: Verify all criteria have met=True
+
+      The validation gate is the quality gatekeeper. It ensures LLM claims of completion are verified programmatically where possible.
+
+      Acceptance criteria:
+      1. Gate checks branch has commits beyond base commit
+      2. Gate verifies final commit SHA exists and is on ticket branch
+      3. Gate accepts "passing" test status, accepts "skipped" only for non-critical tickets
+      4. Gate verifies all acceptance criteria are marked met=True
+      5. Gate returns first check failure with clear reason
+      6. Gate returns passed=True only if all checks pass
+
+      Testing requirements:
+      - Unit test each validation check independently
+      - Unit test with all checks passing (gate passes)
+      - Unit test with missing commits (gate fails)
+      - Unit test with invalid final commit (gate fails)
+      - Unit test with failing tests (gate fails)
+      - Unit test with unmet acceptance criteria (gate fails)
+      - Unit test critical ticket with skipped tests (gate fails)
+      - Unit test non-critical ticket with skipped tests (gate passes)
+
+      Non-goals: Running tests ourselves (trust LLM report), merge conflict checking (handled during finalize), other gates.
+
+    depends_on: ["core-models", "gate-interface", "git-wrapper"]
+    critical: true
+    coordination_role: "Consumed by state machine during AWAITING_VALIDATION->COMPLETED transition; quality gatekeeper"
+
+  - id: cli-commands
+    description: |
+      As an LLM orchestrator, I want CLI commands that provide a clean JSON API so that I can interact with the state machine programmatically without accessing state files directly.
+
+      This ticket implements Click commands that wrap state machine API methods and provide JSON input/output for LLM consumption. Key commands to implement:
+      - epic status <epic-file> [--ready]: Return epic status or ready tickets as JSON
+      - epic start-ticket <epic-file> <ticket-id>: Start ticket, return branch info as JSON
+      - epic complete-ticket <epic-file> <ticket-id> --final-commit <sha> --test-status <status> --acceptance-criteria <json-file>: Validate and complete ticket, return success as JSON
+      - epic fail-ticket <epic-file> <ticket-id> --reason <reason>: Mark ticket failed, return status as JSON
+      - epic finalize <epic-file>: Collapse branches and push, return result as JSON
+
+      All commands load state machine with resume=True (except first run), call appropriate API method, output JSON to stdout, and exit with code 0 on success or 1 on failure.
+
+      Acceptance criteria:
+      1. All commands defined with Click decorators
+      2. Commands accept required arguments and options
+      3. Success output sent to stdout as formatted JSON
+      4. Error output sent to stderr with exit code 1
+      5. Commands resume state machine from existing state file
+      6. JSON output matches spec format from epic document
+
+      Testing requirements:
+      - Unit tests with mock state machine verify command logic
+      - Integration tests with real state machine verify end-to-end flow
+      - Test JSON output format matches expected structure
+      - Test error handling produces stderr output and exit code 1
+      - Test file path validation and error messages
+
+      Non-goals: State machine logic (already implemented), LLM orchestrator instructions (separate ticket), advanced CLI features (colors, progress bars).
+
+    depends_on: ["state-machine-core"]
+    critical: true
+    coordination_role: "Provides JSON API consumed by LLM orchestrator; wraps state machine public methods"
+
+  - id: state-machine-initialization
+    description: |
+      As an epic orchestrator, I want state machine initialization to parse epic YAML and create initial state so that execution can begin from a clean starting point.
+
+      This ticket extends EpicStateMachine with initialization logic for new epic execution (not resume). The initialization process creates epic-state.json, parses tickets from epic YAML, sets up epic branch, and captures baseline commit. Key functions to implement:
+      - _initialize_new_epic(): Entry point for new epic setup
+      - _parse_epic_file() -> Dict: Load and parse epic YAML file
+      - _create_epic_branch(): Create epic branch from main/master HEAD
+      - _initialize_tickets() -> Dict[str, Ticket]: Convert epic tickets to Ticket dataclasses in PENDING state
+      - _create_artifacts_directory(): Ensure .epics/[name]/artifacts/ exists
+      - _capture_baseline_commit() -> str: Record main/master HEAD as epic baseline
+
+      The initialization flow: parse YAML -> create epic branch (stays at baseline) -> initialize ticket objects -> create artifacts directory -> save initial state file.
+
+      Acceptance criteria:
+      1. Epic YAML parsed correctly with all ticket fields
+      2. Epic branch created from main/master HEAD
+      3. Baseline commit captured before any ticket work
+      4. All tickets initialized in PENDING state with correct depends_on
+      5. Artifacts directory created at .epics/[epic-name]/artifacts/
+      6. Initial epic-state.json written with INITIALIZING->EXECUTING transition
+      7. Initialization fails gracefully if epic branch already exists
+
+      Testing requirements:
+      - Unit test YAML parsing with sample epic file
+      - Unit test ticket initialization from YAML
+      - Integration test full initialization creates correct state
+      - Test baseline commit capture before any changes
+      - Test error handling for invalid YAML
+      - Test error handling when epic branch exists
+
+      Non-goals: Resume logic (separate concern), ticket execution, CLI integration.
+
+    depends_on: ["state-machine-core"]
+    critical: true
+    coordination_role: "Extends state machine core with initialization; enables first-run epic setup"
+
+  - id: state-machine-finalize
+    description: |
+      As a state machine, I want to collapse all ticket branches into the epic branch after execution so that the epic has a clean history ready for PR creation.
+
+      This ticket implements the finalize_epic() method which performs the final collapse phase: topological sort, squash merge each ticket, cleanup branches, and push epic branch to remote. Key functions to implement:
+      - finalize_epic() -> Dict: Main finalize entry point (already stubbed in state-machine-core)
+      - _topological_sort(tickets: List[Ticket]) -> List[Ticket]: Sort tickets by dependencies using Kahn's algorithm or DFS
+      - _merge_ticket_into_epic(ticket: Ticket) -> str: Squash merge ticket branch into epic branch, return merge commit SHA
+      - _cleanup_ticket_branch(ticket: Ticket): Delete ticket branch locally and on remote
+      - _push_epic_branch(): Push epic branch to remote for PR creation
+
+      The finalization process ensures all tickets are COMPLETED, transitions epic to MERGING state, merges tickets in dependency order, handles merge conflicts gracefully, and transitions to FINALIZED on success.
+
+      Acceptance criteria:
+      1. Topological sort produces valid dependency ordering
+      2. Each ticket squash merged into epic branch sequentially
+      3. Merge commit messages follow format: "feat: {ticket.title}\n\nTicket: {ticket.id}"
+      4. Ticket branches deleted after successful merge
+      5. Epic branch pushed to remote after all merges
+      6. Merge conflicts cause finalize to fail with clear error
+      7. Epic state transitions EXECUTING->MERGING->FINALIZED
+
+      Testing requirements:
+      - Unit test topological sort with various dependency graphs
+      - Unit test merge commit message formatting
+      - Integration test full finalize with 3 tickets
+      - Test merge conflict detection and error handling
+      - Test branch cleanup after merge
+      - Test epic state transitions during finalize
+
+      Non-goals: Ticket execution, PR creation (done by human or CI), rollback logic.
+
+    depends_on: ["state-machine-core"]
+    critical: true
+    coordination_role: "Completes epic execution; produces clean epic branch ready for human review"
+
+  - id: error-recovery-rollback
+    description: |
+      As a state machine, I want rollback capability when critical tickets fail so that the repository can be restored to pre-epic state without manual intervention.
+
+      This ticket implements rollback functionality triggered when a critical ticket fails and rollback_on_failure=true in epic config. Key functions to implement:
+      - _execute_rollback(): Main rollback entry point
+      - _delete_epic_branch(): Delete epic branch locally and on remote
+      - _delete_all_ticket_branches(): Delete all created ticket branches
+      - _restore_baseline(): Checkout main/master to restore original state
+      - _mark_rollback_complete(): Transition epic to ROLLED_BACK state
+
+      Rollback is a safety mechanism for catastrophic failures. It removes all branches created during epic execution, leaving the repository as if the epic never started.
+
+      Acceptance criteria:
+      1. Rollback triggered automatically when critical ticket fails and rollback_on_failure=true
+      2. Epic branch deleted locally and on remote
+      3. All ticket branches (COMPLETED, FAILED, BLOCKED) deleted
+      4. Working directory restored to main/master
+      5. Epic state transitions to ROLLED_BACK
+      6. Rollback logs all cleanup actions
+      7. Rollback is idempotent (can run multiple times safely)
+
+      Testing requirements:
+      - Unit test rollback triggered on critical failure with flag enabled
+      - Unit test rollback not triggered when flag disabled
+      - Integration test full rollback cleans up all branches
+      - Test rollback idempotence
+      - Test rollback logs all actions
+      - Test partial rollback (some branches already deleted)
+
+      Non-goals: Partial success handling (continuing after non-critical failure), undo of merged changes (rollback only works before finalize).
+
+    depends_on: ["state-machine-core"]
+    critical: false
+    coordination_role: "Provides safety mechanism for critical failures; extends state machine error handling"
+
+  - id: error-recovery-resume
+    description: |
+      As an epic orchestrator, I want to resume epic execution from state file after crashes so that progress is not lost when interruptions occur.
+
+      This ticket implements state machine resume capability, allowing execution to pick up where it left off using epic-state.json. Key functions to implement:
+      - _load_state(): Load and validate epic-state.json (already stubbed)
+      - _validate_state_schema(state_data: Dict) -> bool: Verify JSON structure matches expected schema
+      - _reconcile_git_state(): Verify git branches match state file (detect manual changes)
+      - _resume_in_progress_tickets(): Handle tickets that were IN_PROGRESS during crash
+
+      Resume mode loads existing state, validates it matches current git state, and continues execution. Special handling for tickets that were active during crash (mark as FAILED or allow retry).
+
+      Acceptance criteria:
+      1. State machine loads from epic-state.json when resume=True
+      2. JSON schema validated before accepting state
+      3. Git branches reconciled with state (verify branches exist)
+      4. Tickets in terminal states (COMPLETED, FAILED, BLOCKED) preserved
+      5. Tickets in IN_PROGRESS marked as FAILED with "crashed" reason
+      6. Resume fails gracefully if state file corrupted or missing
+
+      Testing requirements:
+      - Unit test state file loading and validation
+      - Unit test schema validation catches malformed JSON
+      - Integration test resume continues from EXECUTING state
+      - Test git reconciliation detects deleted branches
+      - Test handling of IN_PROGRESS tickets after crash
+      - Test error handling for corrupted state file
+
+      Non-goals: Time travel (reverting to earlier state), conflict resolution for manual git changes, automatic retry of failed tickets.
+
+    depends_on: ["state-machine-core"]
+    critical: false
+    coordination_role: "Enables crash recovery; extends state machine initialization"
+
+  - id: integration-tests
+    description: |
+      As a state machine developer, I want comprehensive integration tests so that all invariants are verified and edge cases are covered.
+
+      This ticket creates end-to-end integration tests that verify state machine behavior with real git operations in isolated test repositories. Test scenarios to implement:
+      - test_happy_path_three_tickets(): Create epic with 3 sequential tickets, execute all, finalize, verify git structure
+      - test_critical_ticket_failure_with_rollback(): Critical ticket fails, verify rollback cleans up branches
+      - test_non_critical_failure_blocks_dependents(): Non-critical fails, dependents blocked, other tickets continue
+      - test_diamond_dependency_graph(): Multiple dependencies converge, verify base commit calculation
+      - test_resume_after_crash(): Stop mid-execution, resume from state file, complete successfully
+      - test_concurrent_execution_blocked(): Verify only 1 ticket runs at time (synchronous enforcement)
+      - test_validation_gate_rejects_bad_work(): LLM reports completion with failing tests, gate rejects
+      - test_stacked_branches_correct_base(): Verify each ticket branches from previous final commit
+
+      All tests use real git repositories (created in tmp directories) and real state machine instances. Tests verify both state file contents and git repository structure.
+
+      Acceptance criteria:
+      1. All test scenarios pass with real git operations
+      2. Tests use isolated temporary git repositories
+      3. Tests verify state file JSON matches expectations
+      4. Tests verify git branch structure and commit graph
+      5. Tests clean up temporary repositories after completion
+      6. Coverage includes all major execution paths
+
+      Testing requirements:
+      - Happy path verifies deterministic git structure
+      - Error cases verify proper failure handling and rollback
+      - Resume test verifies state persistence and recovery
+      - Concurrency test verifies synchronous enforcement
+      - Validation test verifies gate rejection works
+      - Each test includes assertions on both state and git
+
+      Non-goals: Performance testing, stress testing, UI testing, LLM integration testing (mocked).
+
+    depends_on: ["cli-commands", "gate-dependencies-met", "gate-create-branch", "gate-llm-start", "gate-validation", "state-machine-finalize", "error-recovery-rollback", "error-recovery-resume"]
+    critical: true
+    coordination_role: "Verifies all components work together correctly; validates system invariants"
+
+  - id: llm-orchestrator-instructions
+    description: |
+      As an LLM orchestrator, I want clear instructions for using the state machine API so that I can coordinate ticket execution without understanding state machine internals.
+
+      This ticket updates execute-epic.md and execute-ticket.md with simplified instructions focused on calling state machine CLI commands. Updates to execute-epic.md:
+      - Remove manual state file manipulation instructions
+      - Replace with CLI command examples and JSON parsing
+      - Add synchronous execution loop example
+      - Document error handling (when complete_ticket fails)
+      - Add finalize phase instructions after all tickets complete
+
+      Updates to execute-ticket.md:
+      - Add final commit SHA reporting requirement
+      - Document test status reporting (passing/failing/skipped)
+      - Add acceptance criteria JSON format specification
+      - Clarify no direct state file access
+
+      The updated instructions focus on: call state machine API, spawn sub-agents, report results, handle errors.
+
+      Acceptance criteria:
+      1. execute-epic.md includes CLI command examples for all operations
+      2. Synchronous execution loop clearly documented
+      3. JSON parsing examples for state machine responses
+      4. Error handling documented (retry logic, failure reporting)
+      5. execute-ticket.md includes completion reporting format
+      6. Instructions explicitly prohibit direct state file access
+      7. Examples show full end-to-end flow from start to finalize
+
+      Testing requirements:
+      - Manual test of orchestrator following new instructions
+      - Verify instructions produce correct CLI calls
+      - Test error handling instructions work
+      - Verify JSON parsing examples are correct
+
+      Non-goals: Implementing orchestrator logic (that's prompt-driven), modifying ticket-builder instructions beyond completion reporting.
+
+    depends_on: ["cli-commands"]
+    critical: true
+    coordination_role: "Enables LLM orchestrator to use state machine; completes integration"

@@ -635,6 +635,31 @@ This document should contain:
 
 Use the Write tool to create this documentation file."""
 
+    # Pre-create updates document path
+    updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
+
+    # Create template document before Claude runs
+    # This ensures visibility even if Claude doesn't create it
+    from datetime import datetime
+    template_content = f"""# Epic File Review Updates
+
+**Date**: {datetime.now().strftime('%Y-%m-%d')}
+**Epic**: {Path(epic_path).stem.replace('.epic', '')}
+**Status**: 🔄 IN PROGRESS
+
+## Changes Being Applied
+
+Claude is currently applying review feedback. This document will be updated with:
+- Priority 1 fixes applied
+- Priority 2 fixes applied
+- Changes not applied (if any)
+
+If you see this message, Claude may not have finished documenting changes.
+Check the epic file modification time and compare with the review artifact.
+"""
+    updates_doc.write_text(template_content)
+    console.print(f"[dim]Created updates template: {updates_doc}[/dim]")
+
     # Execute feedback application by resuming builder session
     runner = ClaudeRunner(context)
 
@@ -656,9 +681,6 @@ Use the Write tool to create this documentation file."""
             stderr=subprocess.DEVNULL,
         )
 
-    # Always ensure updates document exists
-    updates_doc = Path(epic_path).parent / "artifacts" / "epic-file-review-updates.md"
-
     if result.returncode == 0:
         console.print("[green]✓ Review feedback applied[/green]")
 
@@ -676,17 +698,21 @@ Use the Write tool to create this documentation file."""
                     "[yellow]⚠ Epic file may not have been modified[/yellow]"
                 )
 
-        # Check for updates documentation
+        # Check if updates documentation was properly filled in by Claude
         if updates_doc.exists():
-            console.print(f"[dim]Updates documented: {updates_doc}[/dim]")
-        else:
-            console.print(
-                "[yellow]⚠ No updates documentation found, creating fallback...[/yellow]"
-            )
-            _create_fallback_updates_doc(
-                updates_doc,
-                "Session completed but no documentation was created by Claude"
-            )
+            content = updates_doc.read_text()
+            if "IN PROGRESS" in content:
+                # Claude didn't update the template - create fallback
+                console.print(
+                    "[yellow]⚠ Updates documentation not completed by Claude, creating fallback...[/yellow]"
+                )
+                _create_fallback_updates_doc(
+                    updates_doc,
+                    "Session completed but Claude did not update the documentation template"
+                )
+            else:
+                # Claude updated it successfully
+                console.print(f"[dim]Updates documented: {updates_doc}[/dim]")
     else:
         console.print(
             "[yellow]⚠ Failed to apply review feedback, but epic is still usable[/yellow]"
