@@ -620,3 +620,212 @@ After all edits, use Write tool to replace {updates_doc_path} with your document
 {final_step}"""
 
     return prompt
+
+
+def _build_feedback_prompt(
+    review_content: str, targets: ReviewTargets, builder_session_id: str
+) -> str:
+    """Build feedback application prompt dynamically based on review type.
+
+    Constructs a formatted prompt string for Claude to apply review feedback.
+    Takes review content from the review artifact, configuration from
+    ReviewTargets, and session ID from the builder. Returns a multi-section
+    prompt with dynamic content based on review_type.
+
+    The prompt instructs Claude to:
+    1. Read the review feedback carefully
+    2. Edit the appropriate files (based on review_type)
+    3. Apply fixes in priority order (critical first, then high, medium, low)
+    4. Follow important rules specific to the review type
+    5. Document all changes in the updates template file
+
+    Behavior varies based on targets.review_type:
+    - "epic-file": Focuses only on the epic YAML file. Rules emphasize
+      coordination requirements between tickets. Claude is told to edit
+      only the primary_file (epic YAML).
+    - "epic": Covers both epic YAML and all ticket markdown files. Rules
+      include both epic coordination and ticket quality standards. Claude
+      is told to edit primary_file AND all files in additional_files list.
+
+    Args:
+        review_content: The review feedback content from the review artifact
+            (verbatim text that will be embedded in the prompt).
+        targets: ReviewTargets configuration containing file paths, directories,
+            and metadata for the review feedback application.
+        builder_session_id: Session ID of the original epic/ticket builder
+            (used in documentation frontmatter for traceability).
+
+    Returns:
+        A formatted prompt string ready to be passed to ClaudeRunner for
+        execution. The prompt includes all 8 required sections with proper
+        markdown formatting.
+
+    Note:
+        The builder_session_id and targets.reviewer_session_id are included
+        in the prompt so Claude knows what to put in the documentation
+        frontmatter for traceability.
+    """
+    from datetime import datetime
+    
+    # Build the documentation file path
+    updates_doc_path = targets.artifacts_dir / targets.updates_doc_name
+
+    # Section 1: Documentation requirement
+    doc_requirement = f"""## CRITICAL REQUIREMENT: Document Your Work
+
+You MUST create a documentation file at the end of this session.
+
+**File path**: {updates_doc_path}
+
+The file already exists as a template. You must REPLACE it using the Write tool with this structure:
+
+```markdown
+---
+date: {datetime.now().strftime('%Y-%m-%d')}
+epic: {targets.epic_name}
+builder_session_id: {builder_session_id}
+reviewer_session_id: {targets.reviewer_session_id}
+status: completed
+---
+
+# {"Epic File Review Updates" if targets.review_type == "epic-file" else "Epic Review Updates"}
+
+## Changes Applied
+
+### Priority 1 Fixes
+[List EACH Priority 1 issue fixed with SPECIFIC changes made]
+
+### Priority 2 Fixes
+[List EACH Priority 2 issue fixed with SPECIFIC changes made]
+
+## Changes Not Applied
+[List any recommended changes NOT applied and WHY]
+
+## Summary
+[1-2 sentences describing overall improvements]
+```
+
+**IMPORTANT**: Change `status: completed` in the frontmatter. This is how we know you finished."""
+
+    # Section 2: Task description
+    if targets.review_type == "epic-file":
+        task_description = f"""## Your Task: Apply Review Feedback
+
+You are improving an epic file based on a comprehensive review.
+
+**Epic file**: {targets.primary_file}
+**Review report below**:"""
+    else:  # epic review
+        task_description = f"""## Your Task: Apply Review Feedback
+
+You are improving an epic and its tickets based on a comprehensive review.
+
+**Epic file**: {targets.primary_file}
+**Ticket files**: {', '.join(str(f) for f in targets.additional_files)}
+**Review report below**:"""
+
+    # Section 3: Review content (verbatim)
+    review_section = f"\n{review_content}\n"
+
+    # Section 4: Workflow steps
+    if targets.review_type == "epic-file":
+        workflow = f"""### Workflow
+
+1. **Read** the epic file at {targets.primary_file}
+2. **Identify** Priority 1 and Priority 2 issues from the review
+3. **Apply fixes** using Edit tool (surgical changes only)
+4. **Document** your changes by writing the file above"""
+    else:  # epic review
+        workflow = f"""### Workflow
+
+1. **Read** the epic file at {targets.primary_file}
+2. **Read** all ticket files in {', '.join(str(d) for d in targets.editable_directories)}
+3. **Identify** Priority 1 and Priority 2 issues from the review
+4. **Apply fixes** using Edit tool (surgical changes only)
+5. **Document** your changes by writing the file above"""
+
+    # Section 5: What to fix (prioritized)
+    what_to_fix = """### What to Fix
+
+**Priority 1 (Must Fix)**:
+- Add missing function examples to ticket descriptions (Paragraph 2)
+- Define missing terms (like "epic baseline") in coordination_requirements
+- Add missing specifications (error handling, acceptance criteria formats)
+- Fix dependency errors
+
+**Priority 2 (Should Fix if time permits)**:
+- Add integration contracts to tickets
+- Clarify implementation details
+- Add test coverage requirements"""
+
+    # Section 6: Important rules (varies by review_type)
+    if targets.review_type == "epic-file":
+        important_rules = """### Important Rules
+
+- ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
+- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
+- ✅ **KEEP** existing ticket IDs unchanged
+- ✅ **MAINTAIN** coordination requirements between tickets
+- ✅ **VERIFY** changes after each edit
+- ❌ **DO NOT** rewrite the entire epic
+- ❌ **DO NOT** change the epic schema"""
+    else:  # epic review
+        important_rules = """### Important Rules
+
+**For Epic YAML:**
+- ✅ **USE** Edit tool for targeted changes (NOT Write for complete rewrites)
+- ✅ **PRESERVE** existing epic structure and field names (epic, description, ticket_count, etc.)
+- ✅ **KEEP** existing ticket IDs unchanged
+- ✅ **MAINTAIN** coordination requirements between tickets
+- ✅ **VERIFY** changes after each edit
+- ❌ **DO NOT** rewrite the entire epic
+- ❌ **DO NOT** change the epic schema
+
+**For Ticket Markdown Files:**
+- ✅ **USE** Edit tool for targeted changes
+- ✅ **PRESERVE** ticket frontmatter and structure
+- ✅ **ADD** missing acceptance criteria, test cases, and implementation details
+- ✅ **CLARIFY** dependencies and integration points
+- ✅ **VERIFY** consistency with epic coordination requirements
+- ❌ **DO NOT** change ticket IDs or dependencies without coordination
+- ❌ **DO NOT** rewrite entire tickets"""
+
+    # Section 7: Example edits
+    example_edits = """### Example Surgical Edit
+
+Good approach:
+```
+Use Edit tool to add function examples to ticket description Paragraph 2:
+- Find: "Implement git operations wrapper"
+- Replace with: "Implement git operations wrapper.
+
+  Key functions:
+  - create_branch(name: str, base: str) -> None: creates branch from commit
+  - push_branch(name: str) -> None: pushes branch to remote"
+```"""
+
+    # Section 8: Final documentation step
+    final_step = f"""### Final Step
+
+After all edits, use Write tool to replace {updates_doc_path} with your documentation."""
+
+    # Combine all sections with proper spacing
+    prompt = f"""{doc_requirement}
+
+---
+
+{task_description}
+
+{review_section}
+
+{workflow}
+
+{what_to_fix}
+
+{important_rules}
+
+{example_edits}
+
+{final_step}"""
+
+    return prompt
