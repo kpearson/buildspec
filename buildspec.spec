@@ -5,7 +5,9 @@ a = Analysis(
     ['cli/app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('.epics/epic-file-prompts', 'epics/epic-file-prompts'),
+    ],
     hiddenimports=[
         'typer',
         'rich',

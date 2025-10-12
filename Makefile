@@ -1,4 +1,4 @@
-.PHONY: install uninstall reinstall test build install-binary clean help
+.PHONY: install uninstall reinstall test build install-binary clean help archive-epic
 
 # Default target
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  make reinstall       Uninstall and reinstall buildspec"
 	@echo "  make clean           Remove build artifacts"
 	@echo "  make test            Test the CLI installation"
+	@echo "  make archive-epic EPIC=<name>    Move generated epic files to /tmp with timestamp"
 	@echo "  make help            Show this help message"
 	@echo ""
 	@echo "Recommended: Use 'make build && make install-binary' for standalone installation"
@@ -65,7 +66,7 @@ build:
 	@echo "✅ Symlink updated: ~/.local/bin/buildspec -> dist/$$(cat dist/.latest)"
 	@echo ""
 
-install-binary: build
+install-binary: build install
 	@echo "Installing standalone binary..."
 	@echo ""
 	@if [ ! -f dist/.latest ]; then \
@@ -77,8 +78,6 @@ install-binary: build
 	rm -f "$${HOME}/.local/bin/buildspec"; \
 	ln -s "$(PWD)/dist/$${BINARY_NAME}" "$${HOME}/.local/bin/buildspec"; \
 	echo "✅ Symlink created: $${HOME}/.local/bin/buildspec -> $(PWD)/dist/$${BINARY_NAME}"
-	@echo ""
-	@./scripts/install.sh
 	@echo ""
 	@echo "✅ Installation complete!"
 	@echo ""
@@ -105,3 +104,52 @@ test:
 		echo "Run 'make install' or 'make install-binary' first"; \
 		exit 1; \
 	fi
+
+archive-epic:
+	@echo "Archiving generated epic files..."
+	@if [ -z "$(EPIC)" ]; then \
+		echo "❌ Error: No epic specified"; \
+		echo "Usage: make archive-epic EPIC=<epic-name>"; \
+		echo ""; \
+		echo "Available epics:"; \
+		for dir in .epics/*/; do \
+			if [ -d "$$dir" ]; then \
+				basename "$$dir"; \
+			fi; \
+		done; \
+		exit 1; \
+	fi
+	@if [ ! -d ".epics/$(EPIC)" ]; then \
+		echo "❌ Error: No epic found at .epics/$(EPIC)"; \
+		echo ""; \
+		echo "Available epics:"; \
+		for dir in .epics/*/; do \
+			if [ -d "$$dir" ]; then \
+				basename "$$dir"; \
+			fi; \
+		done; \
+		exit 1; \
+	fi
+	@TIMESTAMP=$$(date +%s); \
+	EPIC_NAME="$(EPIC)"; \
+	ARCHIVE_DIR="/tmp/$${EPIC_NAME}/$${TIMESTAMP}-$${EPIC_NAME}"; \
+	mkdir -p "$${ARCHIVE_DIR}"; \
+	echo "📦 Creating archive: $${ARCHIVE_DIR}"; \
+	echo ""; \
+	for item in .epics/$${EPIC_NAME}/*; do \
+		if [ -e "$$item" ]; then \
+			BASENAME=$$(basename "$$item"); \
+			if echo "$$BASENAME" | grep -q "spec\.md$$"; then \
+				cp "$$item" "$${ARCHIVE_DIR}/$$BASENAME"; \
+				echo "✅ Copied (preserved): $$BASENAME"; \
+			else \
+				mv "$$item" "$${ARCHIVE_DIR}/$$BASENAME"; \
+				echo "✅ Moved: $$BASENAME"; \
+			fi; \
+		fi; \
+	done
+	@echo ""
+	@TIMESTAMP=$$(date +%s); \
+	EPIC_NAME="$(EPIC)"; \
+	ARCHIVE_DIR="/tmp/$${EPIC_NAME}/$${TIMESTAMP}-$${EPIC_NAME}"; \
+	echo "✅ Archive complete: $${ARCHIVE_DIR}"

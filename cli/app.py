@@ -2,7 +2,13 @@
 
 import typer
 
-from cli.commands import create_epic, create_tickets, execute_epic, execute_ticket, init
+from cli.commands import (
+    create_epic,
+    create_tickets,
+    execute_epic,
+    execute_ticket,
+    init,
+)
 
 app = typer.Typer(
     name="buildspec",

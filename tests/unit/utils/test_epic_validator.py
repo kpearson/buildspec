@@ -58,8 +58,8 @@ class TestParseEpicYaml:
         finally:
             os.unlink(temp_path)
 
-    def test_raises_key_error_for_missing_ticket_count(self):
-        """Should raise KeyError if ticket_count field is missing."""
+    def test_parses_epic_without_explicit_ticket_count(self):
+        """Should derive ticket_count from len(tickets) if not provided."""
         epic_data = {
             'epic': 'Test Epic',
             'tickets': [{'id': 'ticket-1'}]
@@ -70,16 +70,14 @@ class TestParseEpicYaml:
             temp_path = f.name
 
         try:
-            with pytest.raises(KeyError) as exc_info:
-                parse_epic_yaml(temp_path)
-
-            assert 'Missing required fields' in str(exc_info.value)
-            assert 'ticket_count' in str(exc_info.value)
+            result = parse_epic_yaml(temp_path)
+            assert result['ticket_count'] == 1  # Derived from len(tickets)
+            assert result['epic'] == 'Test Epic'
         finally:
             os.unlink(temp_path)
 
     def test_raises_key_error_for_missing_epic_field(self):
-        """Should raise KeyError if epic field is missing."""
+        """Should raise KeyError if neither epic nor id+title fields present."""
         epic_data = {
             'ticket_count': 15,
             'tickets': [{'id': 'ticket-1'}]
@@ -93,13 +91,14 @@ class TestParseEpicYaml:
             with pytest.raises(KeyError) as exc_info:
                 parse_epic_yaml(temp_path)
 
-            assert 'Missing required fields' in str(exc_info.value)
-            assert 'epic' in str(exc_info.value)
+            error_msg = str(exc_info.value)
+            assert 'Epic file must have either' in error_msg
+            assert 'epic' in error_msg or 'title' in error_msg
         finally:
             os.unlink(temp_path)
 
-    def test_raises_key_error_for_missing_tickets_field(self):
-        """Should raise KeyError if tickets field is missing."""
+    def test_raises_value_error_for_missing_tickets_field(self):
+        """Should raise ValueError if tickets field is missing or empty."""
         epic_data = {
             'epic': 'Test Epic',
             'ticket_count': 15
@@ -110,16 +109,15 @@ class TestParseEpicYaml:
             temp_path = f.name
 
         try:
-            with pytest.raises(KeyError) as exc_info:
+            with pytest.raises(ValueError) as exc_info:
                 parse_epic_yaml(temp_path)
 
-            assert 'Missing required fields' in str(exc_info.value)
-            assert 'tickets' in str(exc_info.value)
+            assert 'Epic file has no tickets' in str(exc_info.value)
         finally:
             os.unlink(temp_path)
 
     def test_raises_key_error_for_multiple_missing_fields(self):
-        """Should raise KeyError listing all missing fields."""
+        """Should raise KeyError when required epic identification fields missing."""
         epic_data = {
             'description': 'Some description'
         }
@@ -133,11 +131,9 @@ class TestParseEpicYaml:
                 parse_epic_yaml(temp_path)
 
             error_msg = str(exc_info.value)
-            assert 'Missing required fields' in error_msg
-            # All three fields should be mentioned
-            assert 'ticket_count' in error_msg
-            assert 'epic' in error_msg
-            assert 'tickets' in error_msg
+            assert 'Epic file must have either' in error_msg
+            # Should mention either epic or id+title requirement
+            assert 'epic' in error_msg or 'title' in error_msg
         finally:
             os.unlink(temp_path)
 
@@ -180,8 +176,8 @@ class TestParseEpicYaml:
         finally:
             os.unlink(temp_path)
 
-    def test_parses_epic_with_zero_tickets(self):
-        """Should parse epic with ticket_count of 0."""
+    def test_raises_value_error_for_zero_tickets(self):
+        """Should raise ValueError for epic with zero tickets."""
         epic_data = {
             'epic': 'Empty Epic',
             'ticket_count': 0,
@@ -193,9 +189,10 @@ class TestParseEpicYaml:
             temp_path = f.name
 
         try:
-            result = parse_epic_yaml(temp_path)
-            assert result['ticket_count'] == 0
-            assert result['tickets'] == []
+            with pytest.raises(ValueError) as exc_info:
+                parse_epic_yaml(temp_path)
+
+            assert 'Epic file has no tickets' in str(exc_info.value)
         finally:
             os.unlink(temp_path)
 

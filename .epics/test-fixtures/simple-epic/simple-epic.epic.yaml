@@ -1,0 +1,41 @@
+name: Simple Test Epic
+description: |
+  Minimal epic for testing review feedback application workflows.
+  This epic is designed to test both epic-file-review and epic-review
+  feedback application with predictable, verifiable changes.
+
+coordination_requirements:
+  - All test tickets must be simple and independent
+  - Each ticket should modify distinct sections for easy verification
+  - Keep descriptions minimal but realistic
+
+tickets:
+  - id: TEST-001
+    title: First test ticket
+    description: |
+      Simple ticket for testing basic review feedback application.
+      This ticket tests that individual ticket modifications work correctly.
+    acceptance_criteria:
+      - Test criterion 1 is met
+      - Test criterion 2 is verified
+    dependencies: []
+
+  - id: TEST-002
+    title: Second test ticket
+    description: |
+      Another test ticket for verification purposes.
+      Tests multi-ticket scenarios.
+    acceptance_criteria:
+      - Second ticket criterion met
+    dependencies:
+      - TEST-001
+
+  - id: TEST-003
+    title: Third test ticket
+    description: |
+      Final test ticket to complete the test suite.
+      Validates end-to-end workflow completion.
+    acceptance_criteria:
+      - Final verification complete
+    dependencies:
+      - TEST-002

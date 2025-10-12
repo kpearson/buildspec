@@ -32,7 +32,7 @@ build = [
 ]
 
 [tool.ruff]
-line-length = 88
+line-length = 80
 target-version = "py38"
 
 [tool.ruff.lint]
