@@ -2164,7 +2164,7 @@ status: completed
     def test_apply_review_feedback_claude_failure_creates_fallback(
         self, tmp_path, mocker
     ):
-        """Verify fallback doc created when Claude session fails."""
+        """Verify template stays in_progress when Claude session fails (no fallback doc)."""
         from cli.utils.review_feedback import apply_review_feedback
 
         # Create test files
@@ -2199,7 +2199,7 @@ status: completed
         mock_context = mocker.Mock()
         mock_context.cwd = tmp_path
 
-        # Execute - should handle exception and create fallback
+        # Execute - should handle exception without creating fallback doc
         apply_review_feedback(
             review_artifact_path=review_artifact,
             builder_session_id="builder-456",
@@ -2208,15 +2208,18 @@ status: completed
             console=mock_console,
         )
 
-        # Verify fallback doc was created
-        fallback_path = artifacts_dir / "updates.md"
-        assert fallback_path.exists()
-        content = fallback_path.read_text(encoding="utf-8")
-        assert "status: completed" in content or "status: completed_with_errors" in content
+        # Verify template doc still has status: in_progress (not completed)
+        # This allows auto-resume to detect the failure and retry
+        template_path = artifacts_dir / "updates.md"
+        assert template_path.exists()
+        content = template_path.read_text(encoding="utf-8")
+        assert "status: in_progress" in content
+        assert "status: completed" not in content
+        assert "status: completed_with_errors" not in content
 
         # Verify console showed warning
         assert any(
-            "fallback" in str(call).lower()
+            "warning" in str(call).lower()
             for call in mock_console.print.call_args_list
         )
 

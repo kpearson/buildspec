@@ -834,18 +834,13 @@ def apply_review_feedback(
             logger.error(error_msg)
             console.print(f"[yellow]Warning: {error_msg}[/yellow]")
 
-            # Create fallback doc and continue
-            _create_fallback_updates_doc(
-                targets=targets,
-                stdout=claude_stdout,
-                stderr=claude_stderr,
-                builder_session_id=builder_session_id,
-            )
-            fallback_doc = targets.artifacts_dir / targets.updates_doc_name
-            console.print(
-                f"[yellow]Created fallback documentation: "
-                f"{fallback_doc}[/yellow]"
-            )
+            # Don't create fallback doc - this would cause resume to skip this step
+            # Just write error logs for debugging
+            if claude_stderr:
+                error_file_path.write_text(claude_stderr, encoding="utf-8")
+                logger.warning(f"Wrote stderr to: {error_file_path}")
+                console.print(f"[yellow]Error log: {error_file_path}[/yellow]")
+
             return
 
         # Step 5: Validate documentation was completed
