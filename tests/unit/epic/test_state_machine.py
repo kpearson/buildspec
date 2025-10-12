@@ -627,3 +627,366 @@ class TestFailTicket:
 
         assert ticket.state == TicketState.FAILED
         assert ticket.failure_reason == "Test failure reason"
+
+
+class TestTopologicalSort:
+    """Tests for _topological_sort method."""
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_topological_sort_linear(self, mock_git_class, temp_epic_dir):
+        """Test topological sort with linear dependencies (A -> B -> C)."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Get all tickets
+        tickets = list(state_machine.tickets.values())
+
+        # Sort them
+        sorted_tickets = state_machine._topological_sort(tickets)
+
+        # Verify order: A -> B -> C
+        assert sorted_tickets[0].id == "ticket-a"
+        assert sorted_tickets[1].id == "ticket-b"
+        assert sorted_tickets[2].id == "ticket-c"
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_topological_sort_independent(self, mock_git_class, temp_epic_dir):
+        """Test topological sort with independent tickets."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Create independent tickets
+        ticket_x = Ticket(
+            id="ticket-x",
+            path="test",
+            title="Ticket X",
+            depends_on=[],
+            state=TicketState.COMPLETED,
+        )
+        ticket_y = Ticket(
+            id="ticket-y",
+            path="test",
+            title="Ticket Y",
+            depends_on=[],
+            state=TicketState.COMPLETED,
+        )
+        ticket_z = Ticket(
+            id="ticket-z",
+            path="test",
+            title="Ticket Z",
+            depends_on=[],
+            state=TicketState.COMPLETED,
+        )
+
+        tickets = [ticket_x, ticket_y, ticket_z]
+        sorted_tickets = state_machine._topological_sort(tickets)
+
+        # Should be sorted alphabetically (deterministic ordering)
+        assert sorted_tickets[0].id == "ticket-x"
+        assert sorted_tickets[1].id == "ticket-y"
+        assert sorted_tickets[2].id == "ticket-z"
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_topological_sort_diamond(self, mock_git_class, temp_epic_dir):
+        """Test topological sort with diamond dependency (A -> B, A -> C, B+C -> D)."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Create diamond dependency structure
+        ticket_a = Ticket(
+            id="ticket-a",
+            path="test",
+            title="Ticket A",
+            depends_on=[],
+            state=TicketState.COMPLETED,
+        )
+        ticket_b = Ticket(
+            id="ticket-b",
+            path="test",
+            title="Ticket B",
+            depends_on=["ticket-a"],
+            state=TicketState.COMPLETED,
+        )
+        ticket_c = Ticket(
+            id="ticket-c",
+            path="test",
+            title="Ticket C",
+            depends_on=["ticket-a"],
+            state=TicketState.COMPLETED,
+        )
+        ticket_d = Ticket(
+            id="ticket-d",
+            path="test",
+            title="Ticket D",
+            depends_on=["ticket-b", "ticket-c"],
+            state=TicketState.COMPLETED,
+        )
+
+        tickets = [ticket_d, ticket_c, ticket_b, ticket_a]  # Intentional disorder
+        sorted_tickets = state_machine._topological_sort(tickets)
+
+        # A should be first, D should be last
+        assert sorted_tickets[0].id == "ticket-a"
+        assert sorted_tickets[3].id == "ticket-d"
+
+        # B and C should be in middle (either order is valid)
+        middle_ids = {sorted_tickets[1].id, sorted_tickets[2].id}
+        assert middle_ids == {"ticket-b", "ticket-c"}
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_topological_sort_empty_list(self, mock_git_class, temp_epic_dir):
+        """Test topological sort with empty list."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        sorted_tickets = state_machine._topological_sort([])
+        assert sorted_tickets == []
+
+
+class TestFinalizeEpic:
+    """Tests for _finalize_epic method."""
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_success(self, mock_git_class, temp_epic_dir):
+        """Test successful epic finalization."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git.merge_branch.side_effect = ["commit1", "commit2", "commit3"]
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Set up completed tickets with git info
+        for ticket_id in ["ticket-a", "ticket-b", "ticket-c"]:
+            ticket = state_machine.tickets[ticket_id]
+            ticket.state = TicketState.COMPLETED
+            ticket.git_info = GitInfo(
+                branch_name=f"ticket/{ticket_id}",
+                base_commit="abc123",
+                final_commit=f"{ticket_id}-final",
+            )
+
+        # Finalize
+        result = state_machine._finalize_epic()
+
+        # Verify result
+        assert result["success"] is True
+        assert result["epic_branch"] == "epic/test-epic"
+        assert len(result["merge_commits"]) == 3
+        assert result["pushed"] is True
+
+        # Verify epic state
+        assert state_machine.epic_state == EpicState.FINALIZED
+
+        # Verify git operations called
+        assert mock_git.merge_branch.call_count == 3
+        assert mock_git.delete_branch.call_count == 6  # 3 local + 3 remote
+        mock_git.push_branch.assert_called_once()
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_no_completed_tickets(self, mock_git_class, temp_epic_dir):
+        """Test finalization with no completed tickets."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Mark all tickets as failed
+        for ticket in state_machine.tickets.values():
+            ticket.state = TicketState.FAILED
+
+        # Finalize
+        result = state_machine._finalize_epic()
+
+        # Should succeed but with empty merge commits
+        assert result["success"] is True
+        assert len(result["merge_commits"]) == 0
+        assert result["pushed"] is False
+
+        # Verify no git operations called
+        mock_git.merge_branch.assert_not_called()
+        mock_git.delete_branch.assert_not_called()
+        mock_git.push_branch.assert_not_called()
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_with_non_terminal_tickets(
+        self, mock_git_class, temp_epic_dir
+    ):
+        """Test finalization fails if tickets not in terminal state."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Leave one ticket in non-terminal state
+        state_machine.tickets["ticket-a"].state = TicketState.COMPLETED
+        state_machine.tickets["ticket-b"].state = TicketState.IN_PROGRESS
+        state_machine.tickets["ticket-c"].state = TicketState.COMPLETED
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="not in terminal state"):
+            state_machine._finalize_epic()
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_merge_conflict(self, mock_git_class, temp_epic_dir):
+        """Test finalization handles merge conflicts."""
+        from cli.epic.git_operations import GitError
+
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        # First merge succeeds, second fails
+        mock_git.merge_branch.side_effect = ["commit1", GitError("Merge conflict")]
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Set up completed tickets
+        for ticket_id in ["ticket-a", "ticket-b", "ticket-c"]:
+            ticket = state_machine.tickets[ticket_id]
+            ticket.state = TicketState.COMPLETED
+            ticket.git_info = GitInfo(
+                branch_name=f"ticket/{ticket_id}",
+                base_commit="abc123",
+                final_commit=f"{ticket_id}-final",
+            )
+
+        # Should raise GitError
+        with pytest.raises(GitError, match="Merge conflict"):
+            state_machine._finalize_epic()
+
+        # Epic state should be FAILED
+        assert state_machine.epic_state == EpicState.FAILED
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_orders_by_dependency(self, mock_git_class, temp_epic_dir):
+        """Test finalization merges tickets in dependency order."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git.merge_branch.side_effect = ["commit1", "commit2", "commit3"]
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Set up completed tickets with git info (in reverse order)
+        for ticket_id in ["ticket-c", "ticket-b", "ticket-a"]:
+            ticket = state_machine.tickets[ticket_id]
+            ticket.state = TicketState.COMPLETED
+            ticket.git_info = GitInfo(
+                branch_name=f"ticket/{ticket_id}",
+                base_commit="abc123",
+                final_commit=f"{ticket_id}-final",
+            )
+
+        # Finalize
+        state_machine._finalize_epic()
+
+        # Verify merge_branch called in correct order (A -> B -> C)
+        calls = mock_git.merge_branch.call_args_list
+        assert calls[0][1]["source"] == "ticket/ticket-a"
+        assert calls[1][1]["source"] == "ticket/ticket-b"
+        assert calls[2][1]["source"] == "ticket/ticket-c"
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_commit_message_format(self, mock_git_class, temp_epic_dir):
+        """Test finalization uses correct commit message format."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git.merge_branch.side_effect = ["commit1", "commit2", "commit3"]
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Set up one completed ticket
+        ticket = state_machine.tickets["ticket-a"]
+        ticket.state = TicketState.COMPLETED
+        ticket.git_info = GitInfo(
+            branch_name="ticket/ticket-a",
+            base_commit="abc123",
+            final_commit="final123",
+        )
+
+        # Mark others as failed so they don't get merged
+        state_machine.tickets["ticket-b"].state = TicketState.FAILED
+        state_machine.tickets["ticket-c"].state = TicketState.FAILED
+
+        # Finalize
+        state_machine._finalize_epic()
+
+        # Verify commit message format
+        mock_git.merge_branch.assert_called_once()
+        call_args = mock_git.merge_branch.call_args
+        message = call_args[1]["message"]
+        assert message.startswith("feat:")
+        assert "Ticket: ticket-a" in message
+
+    @patch("cli.epic.state_machine.GitOperations")
+    def test_finalize_epic_deletes_branches(self, mock_git_class, temp_epic_dir):
+        """Test finalization deletes both local and remote branches."""
+        epic_file, epic_dir = temp_epic_dir
+
+        mock_git = MagicMock()
+        mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git.merge_branch.return_value = "commit1"
+        mock_git_class.return_value = mock_git
+
+        state_machine = EpicStateMachine(epic_file)
+
+        # Set up one completed ticket
+        ticket = state_machine.tickets["ticket-a"]
+        ticket.state = TicketState.COMPLETED
+        ticket.git_info = GitInfo(
+            branch_name="ticket/ticket-a",
+            base_commit="abc123",
+            final_commit="final123",
+        )
+
+        # Mark others as failed
+        state_machine.tickets["ticket-b"].state = TicketState.FAILED
+        state_machine.tickets["ticket-c"].state = TicketState.FAILED
+
+        # Finalize
+        state_machine._finalize_epic()
+
+        # Verify branch deletion calls
+        assert mock_git.delete_branch.call_count == 2
+        calls = mock_git.delete_branch.call_args_list
+
+        # Should call once with remote=False, once with remote=True
+        assert calls[0][0] == ("ticket/ticket-a",)
+        assert calls[0][1]["remote"] is False
+        assert calls[1][0] == ("ticket/ticket-a",)
+        assert calls[1][1]["remote"] is True

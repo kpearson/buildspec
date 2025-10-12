@@ -532,3 +532,295 @@ class TestStateFilePersistence:
 
         finally:
             os.chdir(original_cwd)
+
+
+class TestEpicFinalization:
+    """Integration tests for epic finalization with branch collapse."""
+
+    @patch("cli.epic.state_machine.ClaudeTicketBuilder")
+    def test_finalization_collapses_branches(self, mock_builder_class, simple_epic):
+        """Test that finalization collapses all ticket branches into epic branch."""
+        epic_file, repo_path = simple_epic
+
+        def mock_builder_init(ticket_file, branch_name, base_commit, epic_file):
+            """Mock builder that creates real commits."""
+            builder = MagicMock()
+            ticket_id = Path(ticket_file).stem
+
+            def execute_ticket():
+                # Checkout branch and make commit
+                subprocess.run(
+                    ["git", "checkout", branch_name],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                test_file = repo_path / f"{ticket_id}.txt"
+                test_file.write_text(f"Changes for {ticket_id}\n")
+                subprocess.run(
+                    ["git", "add", "."],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", f"Implement {ticket_id}"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                return BuilderResult(
+                    success=True,
+                    final_commit=result.stdout.strip(),
+                    test_status="passing",
+                    acceptance_criteria=[
+                        AcceptanceCriterion(criterion="Test", met=True),
+                    ],
+                )
+
+            builder.execute = execute_ticket
+            return builder
+
+        mock_builder_class.side_effect = mock_builder_init
+
+        import os
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(repo_path)
+
+            # Execute epic
+            state_machine = EpicStateMachine(epic_file)
+            state_machine.execute()
+
+            # Verify epic finalized
+            assert state_machine.epic_state == EpicState.FINALIZED
+
+            # Verify ticket branches deleted locally
+            result = subprocess.run(
+                ["git", "branch", "--list"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            local_branches = result.stdout
+            assert "ticket/ticket-a" not in local_branches
+            assert "ticket/ticket-b" not in local_branches
+            assert "ticket/ticket-c" not in local_branches
+
+            # Verify epic branch exists
+            assert "epic/simple-epic" in local_branches
+
+            # Verify epic branch has all changes
+            subprocess.run(
+                ["git", "checkout", "epic/simple-epic"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+
+            # All ticket files should exist
+            assert (repo_path / "ticket-a.txt").exists()
+            assert (repo_path / "ticket-b.txt").exists()
+            assert (repo_path / "ticket-c.txt").exists()
+
+            # Verify commit messages in epic branch
+            result = subprocess.run(
+                ["git", "log", "--oneline", "epic/simple-epic"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            log = result.stdout
+
+            # Should have commits for all tickets with "feat:" prefix
+            assert "feat:" in log
+            assert "Ticket: ticket-a" in log or "ticket-a" in log.lower()
+
+        finally:
+            os.chdir(original_cwd)
+
+    @patch("cli.epic.state_machine.ClaudeTicketBuilder")
+    def test_finalization_orders_by_dependencies(self, mock_builder_class, simple_epic):
+        """Test that finalization merges tickets in dependency order."""
+        epic_file, repo_path = simple_epic
+
+        # Track merge order
+        merge_order = []
+
+        # Get reference to original merge_branch
+        from cli.epic.git_operations import GitOperations
+        original_merge = GitOperations.merge_branch
+
+        def track_merge(self, source, target, strategy, message):
+            """Track merge order."""
+            merge_order.append(source)
+            return original_merge(self, source, target, strategy, message)
+
+        def mock_builder_init(ticket_file, branch_name, base_commit, epic_file):
+            """Mock builder."""
+            builder = MagicMock()
+            ticket_id = Path(ticket_file).stem
+
+            def execute_ticket():
+                subprocess.run(
+                    ["git", "checkout", branch_name],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                test_file = repo_path / f"{ticket_id}.txt"
+                test_file.write_text(f"Changes for {ticket_id}\n")
+                subprocess.run(
+                    ["git", "add", "."],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", f"Implement {ticket_id}"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                return BuilderResult(
+                    success=True,
+                    final_commit=result.stdout.strip(),
+                    test_status="passing",
+                    acceptance_criteria=[
+                        AcceptanceCriterion(criterion="Test", met=True),
+                    ],
+                )
+
+            builder.execute = execute_ticket
+            return builder
+
+        mock_builder_class.side_effect = mock_builder_init
+
+        import os
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(repo_path)
+
+            with patch.object(GitOperations, "merge_branch", track_merge):
+                # Execute epic
+                state_machine = EpicStateMachine(epic_file)
+                state_machine.execute()
+
+            # Verify merge order (A -> B -> C)
+            assert merge_order == [
+                "ticket/ticket-a",
+                "ticket/ticket-b",
+                "ticket/ticket-c",
+            ]
+
+        finally:
+            os.chdir(original_cwd)
+
+    @patch("cli.epic.state_machine.ClaudeTicketBuilder")
+    def test_finalization_with_partial_failures(self, mock_builder_class, simple_epic):
+        """Test finalization only merges completed tickets, skips failed ones."""
+        epic_file, repo_path = simple_epic
+
+        def mock_builder_init(ticket_file, branch_name, base_commit, epic_file):
+            """Mock builder that fails ticket-b."""
+            builder = MagicMock()
+            ticket_id = Path(ticket_file).stem
+
+            def execute_ticket():
+                if ticket_id == "ticket-b":
+                    # Fail ticket-b
+                    return BuilderResult(
+                        success=False,
+                        error="Simulated failure",
+                    )
+
+                # Success for others
+                subprocess.run(
+                    ["git", "checkout", branch_name],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                test_file = repo_path / f"{ticket_id}.txt"
+                test_file.write_text(f"Changes for {ticket_id}\n")
+                subprocess.run(
+                    ["git", "add", "."],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", f"Implement {ticket_id}"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                return BuilderResult(
+                    success=True,
+                    final_commit=result.stdout.strip(),
+                    test_status="passing",
+                    acceptance_criteria=[
+                        AcceptanceCriterion(criterion="Test", met=True),
+                    ],
+                )
+
+            builder.execute = execute_ticket
+            return builder
+
+        mock_builder_class.side_effect = mock_builder_init
+
+        import os
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(repo_path)
+
+            # Execute epic
+            state_machine = EpicStateMachine(epic_file)
+            state_machine.execute()
+
+            # Verify ticket states
+            assert state_machine.tickets["ticket-a"].state == TicketState.COMPLETED
+            assert state_machine.tickets["ticket-b"].state == TicketState.FAILED
+            assert state_machine.tickets["ticket-c"].state == TicketState.BLOCKED
+
+            # Epic should be finalized even with partial failure
+            assert state_machine.epic_state == EpicState.FINALIZED
+
+            # Verify only ticket-a merged to epic branch
+            subprocess.run(
+                ["git", "checkout", "epic/simple-epic"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+
+            # Only ticket-a file should exist
+            assert (repo_path / "ticket-a.txt").exists()
+            assert not (repo_path / "ticket-b.txt").exists()
+            assert not (repo_path / "ticket-c.txt").exists()
+
+        finally:
+            os.chdir(original_cwd)

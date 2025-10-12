@@ -408,7 +408,10 @@ class EpicStateMachine:
             return False
 
     def _fail_ticket(self, ticket_id: str, reason: str) -> None:
-        """Fail a ticket.
+        """Fail a ticket with cascading effects.
+
+        Sets failure_reason, transitions to FAILED, and handles cascading
+        effects (blocking dependents, epic failure for critical tickets).
 
         Args:
             ticket_id: ID of ticket to fail
@@ -419,18 +422,254 @@ class EpicStateMachine:
         self._transition_ticket(ticket_id, TicketState.FAILED)
         logger.error(f"Ticket failed: {ticket_id} - {reason}")
 
+        # Handle cascading effects
+        self._handle_ticket_failure(ticket)
+
+    def _handle_ticket_failure(self, ticket: Ticket) -> None:
+        """Handle ticket failure with cascading effects.
+
+        Blocks dependent tickets and handles critical failures.
+
+        Args:
+            ticket: The ticket that failed
+        """
+        logger.info(f"Handling failure cascading for ticket: {ticket.id}")
+
+        # Find and block all dependent tickets
+        dependent_ids = self._find_dependents(ticket.id)
+
+        for dep_id in dependent_ids:
+            dependent = self.tickets[dep_id]
+
+            # Only block tickets that are not already in terminal states
+            if dependent.state not in [TicketState.COMPLETED, TicketState.FAILED]:
+                logger.info(f"Blocking ticket {dep_id} due to failed dependency {ticket.id}")
+                dependent.blocking_dependency = ticket.id
+                self._transition_ticket(dep_id, TicketState.BLOCKED)
+
+        # Handle critical ticket failure
+        if ticket.critical:
+            rollback_on_failure = self.epic_config.get("rollback_on_failure", False)
+
+            if rollback_on_failure:
+                logger.info(f"Critical ticket {ticket.id} failed - executing rollback")
+                self._execute_rollback()
+            else:
+                logger.error(f"Critical ticket {ticket.id} failed - transitioning epic to FAILED")
+                self.epic_state = EpicState.FAILED
+                self._save_state()
+
+    def _find_dependents(self, ticket_id: str) -> list[str]:
+        """Find all tickets that depend on the given ticket.
+
+        Args:
+            ticket_id: ID of ticket to find dependents for
+
+        Returns:
+            List of ticket IDs that depend on the given ticket
+        """
+        dependents = []
+
+        for tid, ticket in self.tickets.items():
+            if ticket_id in ticket.depends_on:
+                dependents.append(tid)
+
+        logger.debug(f"Found {len(dependents)} dependents for ticket {ticket_id}: {dependents}")
+        return dependents
+
+    def _execute_rollback(self) -> None:
+        """Execute rollback by cleaning up branches and resetting state.
+
+        Placeholder for now - will be implemented in ticket: implement-rollback-logic.
+        """
+        logger.warning("Rollback requested but not yet implemented")
+        self.epic_state = EpicState.FAILED
+        self._save_state()
+
+    def _topological_sort(self, tickets: list[Ticket]) -> list[Ticket]:
+        """Sort tickets in dependency order (dependencies before dependents).
+
+        Uses Kahn's algorithm for topological sorting.
+
+        Args:
+            tickets: List of tickets to sort
+
+        Returns:
+            Sorted list with dependencies before dependents
+
+        Raises:
+            ValueError: If circular dependency detected
+        """
+        # Build adjacency list and in-degree count
+        ticket_map = {t.id: t for t in tickets}
+        in_degree = {t.id: 0 for t in tickets}
+        adjacency = {t.id: [] for t in tickets}
+
+        for ticket in tickets:
+            for dep_id in ticket.depends_on:
+                if dep_id in ticket_map:
+                    adjacency[dep_id].append(ticket.id)
+                    in_degree[ticket.id] += 1
+
+        # Queue tickets with no dependencies
+        queue = [tid for tid in in_degree if in_degree[tid] == 0]
+        sorted_ids = []
+
+        while queue:
+            # Sort queue to ensure deterministic ordering
+            queue.sort()
+            current_id = queue.pop(0)
+            sorted_ids.append(current_id)
+
+            # Reduce in-degree for dependents
+            for dependent_id in adjacency[current_id]:
+                in_degree[dependent_id] -= 1
+                if in_degree[dependent_id] == 0:
+                    queue.append(dependent_id)
+
+        # Check for cycles
+        if len(sorted_ids) != len(tickets):
+            raise ValueError("Circular dependency detected in tickets")
+
+        # Return tickets in sorted order
+        return [ticket_map[tid] for tid in sorted_ids]
+
     def _finalize_epic(self) -> dict[str, Any]:
         """Finalize epic by collapsing branches.
 
-        Placeholder for now - will be implemented in ticket: implement-finalization-logic.
+        This method implements the collapse phase that runs after all tickets
+        complete. It performs topological sort of tickets, squash-merges each
+        into epic branch in dependency order, deletes ticket branches, and
+        pushes epic branch to remote.
 
         Returns:
-            Empty dict for now
+            Dict with success status, epic_branch, merge_commits, and pushed flag
+
+        Raises:
+            GitError: If merge conflicts occur or git operations fail
         """
-        logger.info("Finalizing epic (placeholder)")
+        logger.info("Starting epic finalization")
+
+        # Verify all tickets in terminal states
+        terminal_states = {TicketState.COMPLETED, TicketState.BLOCKED, TicketState.FAILED}
+        non_terminal = [
+            t for t in self.tickets.values() if t.state not in terminal_states
+        ]
+        if non_terminal:
+            error_msg = f"Cannot finalize: {len(non_terminal)} tickets not in terminal state"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Transition epic to MERGING
+        self.epic_state = EpicState.MERGING
+        self._save_state()
+
+        # Get only COMPLETED tickets for merging
+        completed_tickets = [
+            t for t in self.tickets.values() if t.state == TicketState.COMPLETED
+        ]
+
+        if not completed_tickets:
+            logger.warning("No completed tickets to merge")
+            self.epic_state = EpicState.FINALIZED
+            self._save_state()
+            return {
+                "success": True,
+                "epic_branch": self.epic_branch,
+                "merge_commits": [],
+                "pushed": False,
+            }
+
+        # Topologically sort tickets
+        try:
+            sorted_tickets = self._topological_sort(completed_tickets)
+            logger.info(
+                f"Sorted {len(sorted_tickets)} tickets for merging: "
+                f"{[t.id for t in sorted_tickets]}"
+            )
+        except ValueError as e:
+            logger.error(f"Failed to sort tickets: {e}")
+            self.epic_state = EpicState.FAILED
+            self._save_state()
+            raise
+
+        # Commit state file before switching branches to avoid conflicts
+        try:
+            self.git._run_git_command(["git", "add", str(self.state_file)])
+            self.git._run_git_command(
+                ["git", "commit", "-m", "Save state before finalization", "--allow-empty"],
+                check=False  # OK if nothing to commit
+            )
+        except GitError:
+            # Ignore errors - state file might already be committed
+            pass
+
+        # Merge each ticket into epic branch
+        merge_commits = []
+        try:
+            for ticket in sorted_tickets:
+                logger.info(f"Merging ticket {ticket.id} into {self.epic_branch}")
+
+                # Construct commit message
+                commit_message = f"feat: {ticket.title}\n\nTicket: {ticket.id}"
+
+                # Merge branch
+                merge_commit = self.git.merge_branch(
+                    source=ticket.git_info.branch_name,
+                    target=self.epic_branch,
+                    strategy="squash",
+                    message=commit_message,
+                )
+
+                merge_commits.append(merge_commit)
+                logger.info(
+                    f"Merged ticket {ticket.id}: commit {merge_commit[:8]}"
+                )
+
+        except GitError as e:
+            logger.error(f"Merge conflict or error during finalization: {e}")
+            self.epic_state = EpicState.FAILED
+            self._save_state()
+            raise
+
+        # Delete ticket branches (both local and remote)
+        for ticket in sorted_tickets:
+            try:
+                logger.info(f"Deleting branch {ticket.git_info.branch_name}")
+                self.git.delete_branch(ticket.git_info.branch_name, remote=False)
+                self.git.delete_branch(ticket.git_info.branch_name, remote=True)
+            except GitError as e:
+                # Log warning but continue - branch deletion is not critical
+                logger.warning(
+                    f"Failed to delete branch {ticket.git_info.branch_name}: {e}"
+                )
+
+        # Push epic branch to remote
+        try:
+            logger.info(f"Pushing epic branch {self.epic_branch} to remote")
+            self.git.push_branch(self.epic_branch)
+            pushed = True
+        except GitError as e:
+            logger.error(f"Failed to push epic branch: {e}")
+            self.epic_state = EpicState.FAILED
+            self._save_state()
+            raise
+
+        # Transition epic to FINALIZED
         self.epic_state = EpicState.FINALIZED
         self._save_state()
-        return {}
+
+        logger.info(
+            f"Epic finalization complete: {len(merge_commits)} commits, "
+            f"{len(sorted_tickets)} branches deleted"
+        )
+
+        return {
+            "success": True,
+            "epic_branch": self.epic_branch,
+            "merge_commits": merge_commits,
+            "pushed": pushed,
+        }
 
     def _transition_ticket(self, ticket_id: str, new_state: TicketState) -> None:
         """Transition ticket to new state.
