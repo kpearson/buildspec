@@ -221,6 +221,12 @@ class CreateBranchGate:
                 passed=False,
                 reason=f"Failed to create branch: {e}",
             )
+        except ValueError as e:
+            # Catch ValueError from missing dependency final_commit
+            return GateResult(
+                passed=False,
+                reason=f"Failed to create branch: {e}",
+            )
 
     def _calculate_base_commit(self, ticket: Ticket, context: EpicContext) -> str:
         """Calculate base commit for stacked branches using dependency graph.
