@@ -351,8 +351,9 @@ class TestSimpleEpicExecution:
             assert state_machine.tickets["ticket-b"].state == TicketState.FAILED
             assert state_machine.tickets["ticket-b"].failure_reason is not None
 
-            # Verify ticket-c remained pending (dependencies not met)
-            assert state_machine.tickets["ticket-c"].state == TicketState.PENDING
+            # Verify ticket-c is blocked (ticket-b failed, blocking ticket-c)
+            assert state_machine.tickets["ticket-c"].state == TicketState.BLOCKED
+            assert state_machine.tickets["ticket-c"].blocking_dependency == "ticket-b"
 
             # Verify epic failed
             assert state_machine.epic_state == EpicState.FAILED

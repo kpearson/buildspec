@@ -181,7 +181,9 @@ class TestNonCriticalFailureBlocksDependents:
                     with patch.object(state_machine.git, "get_commits_between", return_value=["commit1"]):
                         with patch.object(state_machine.git, "commit_exists", return_value=True):
                             with patch.object(state_machine.git, "commit_on_branch", return_value=True):
-                                state_machine.execute()
+                                with patch.object(state_machine.git, "merge_branch", return_value="merge-commit"):
+                                    with patch.object(state_machine.git, "delete_branch"):
+                                        state_machine.execute()
 
         # Verify results
         ticket_a = state_machine.tickets["ticket-a"]
@@ -203,8 +205,8 @@ class TestNonCriticalFailureBlocksDependents:
         assert ticket_d.state == TicketState.BLOCKED
         assert ticket_d.blocking_dependency == "ticket-b"
 
-        # Epic should still be EXECUTING or FAILED (depending on final state)
-        assert state_machine.epic_state in [EpicState.EXECUTING, EpicState.FAILED]
+        # Epic should be FINALIZED (ticket-a and ticket-c completed successfully)
+        assert state_machine.epic_state == EpicState.FINALIZED
 
 
 class TestCriticalFailureTransitionsEpicToFailed:
@@ -371,7 +373,9 @@ class TestDiamondDependencyPartialExecution:
                                     "find_most_recent_commit",
                                     return_value="commit-c",
                                 ):
-                                    state_machine.execute()
+                                    with patch.object(state_machine.git, "merge_branch", return_value="merge-commit"):
+                                        with patch.object(state_machine.git, "delete_branch"):
+                                            state_machine.execute()
 
         # Verify results
         ticket_a = state_machine.tickets["ticket-a"]

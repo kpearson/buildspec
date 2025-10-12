@@ -334,6 +334,7 @@ class TestHandleTicketFailure:
 
         mock_git = MagicMock()
         mock_git._run_git_command.return_value = Mock(stdout="abc123\n")
+        mock_git.branch_exists_remote.return_value = True
         mock_git_class.return_value = mock_git
 
         state_machine = EpicStateMachine(epic_file)
@@ -347,8 +348,8 @@ class TestHandleTicketFailure:
         # Handle failure
         state_machine._handle_ticket_failure(ticket_a)
 
-        # Verify epic state is FAILED (rollback placeholder sets this)
-        assert state_machine.epic_state == EpicState.FAILED
+        # Verify epic state is ROLLED_BACK
+        assert state_machine.epic_state == EpicState.ROLLED_BACK
 
     @patch("cli.epic.state_machine.GitOperations")
     def test_handle_failure_critical_without_rollback(

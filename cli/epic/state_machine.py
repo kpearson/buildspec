@@ -146,9 +146,11 @@ class EpicStateMachine:
             self._execute_ticket(ticket)
 
         # Phase 2: Finalize epic (placeholder)
-        if self._all_tickets_completed():
+        if self._all_tickets_completed() and self.epic_state != EpicState.FAILED:
             logger.info("All tickets completed - finalizing epic")
             self._finalize_epic()
+        elif self._all_tickets_completed():
+            logger.warning("All tickets in terminal state but epic already marked FAILED")
         else:
             logger.warning("Not all tickets completed - epic incomplete")
             # Check for failures
@@ -193,6 +195,7 @@ class EpicStateMachine:
 
         ready_tickets = []
 
+        # Check PENDING tickets and transition them to READY if dependencies met
         for ticket in self.tickets.values():
             if ticket.state != TicketState.PENDING:
                 continue
@@ -204,7 +207,11 @@ class EpicStateMachine:
             if result.passed:
                 # Transition to READY
                 self._transition_ticket(ticket.id, TicketState.READY)
-                ready_tickets.append(self.tickets[ticket.id])
+
+        # Collect ALL tickets in READY state (both newly transitioned and already READY)
+        for ticket in self.tickets.values():
+            if ticket.state == TicketState.READY:
+                ready_tickets.append(ticket)
 
         # Sort by dependency depth (tickets with no deps first)
         ready_tickets.sort(key=lambda t: self._calculate_dependency_depth(t))
@@ -295,7 +302,8 @@ class EpicStateMachine:
         Raises:
             Exception: If gate checks fail
         """
-        from cli.epic.test_gates import CreateBranchGate, LLMStartGate
+        from cli.epic.gates import CreateBranchGate
+        from cli.epic.test_gates import LLMStartGate
 
         ticket = self.tickets[ticket_id]
         logger.info(f"Starting ticket: {ticket_id}")
@@ -645,13 +653,6 @@ class EpicStateMachine:
             self._save_state()
             raise
 
-        # Stash any changes to state file before switching branches
-        try:
-            self.git._run_git_command(["git", "add", str(self.state_file)], check=False)
-            self.git._run_git_command(["git", "stash", "push", "-m", "Stash state before finalization"], check=False)
-        except GitError:
-            pass  # OK if stash fails
-
         # Merge each ticket into epic branch
         merge_commits = []
         try:
@@ -659,37 +660,16 @@ class EpicStateMachine:
                 logger.info(f"Merging ticket {ticket.id} into {self.epic_branch}")
                 logger.debug(f"Ticket branch: {ticket.git_info.branch_name}, base: {ticket.git_info.base_commit}, final: {ticket.git_info.final_commit}")
 
-                # Checkout epic branch
-                self.git._run_git_command(["git", "checkout", self.epic_branch])
-
-                # Perform squash merge with automatic conflict resolution for state file
-                # Use -X ours strategy to prefer our version in conflicts
-                merge_result = self.git._run_git_command(
-                    ["git", "merge", "--squash", "-X", "ours", ticket.git_info.branch_name],
-                    check=False
-                )
-
-                # If merge still failed (not just state file conflict), abort
-                if merge_result.returncode != 0:
-                    if "CONFLICT" in merge_result.stdout:
-                        raise GitError(
-                            f"Merge conflict for {ticket.id}: {merge_result.stdout}\n{merge_result.stderr}"
-                        )
-
-                # Remove state file from staging if it was included in the merge
-                self.git._run_git_command(["git", "reset", "HEAD", str(self.state_file)], check=False)
-                if self.state_file.exists():
-                    self.state_file.unlink()
-
                 # Construct commit message
                 commit_message = f"feat: {ticket.title}\n\nTicket: {ticket.id}"
 
-                # Commit the squash merge
-                self.git._run_git_command(["git", "commit", "-m", commit_message])
-
-                # Get the merge commit SHA
-                result = self.git._run_git_command(["git", "rev-parse", "HEAD"])
-                merge_commit = result.stdout.strip()
+                # Merge ticket branch into epic branch using squash merge
+                merge_commit = self.git.merge_branch(
+                    source=ticket.git_info.branch_name,
+                    target=self.epic_branch,
+                    strategy="squash",
+                    message=commit_message
+                )
 
                 merge_commits.append(merge_commit)
                 logger.info(

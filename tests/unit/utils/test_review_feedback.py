@@ -14,7 +14,6 @@ import yaml
 
 from cli.utils.review_feedback import (
     ReviewTargets,
-    _create_fallback_updates_doc,
     _create_template_doc,
 )
 
@@ -1297,559 +1296,6 @@ class TestBuildFeedbackPromptIntegration:
         assert "status: completed" in prompt
 
 
-class TestCreateFallbackDoc:
-    """Test suite for _create_fallback_updates_doc() function."""
-
-    def test_create_fallback_doc_creates_file(self, tmp_path):
-        """Verify file is created at correct path."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some stdout", "Some stderr", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        assert fallback_path.exists()
-        assert fallback_path.is_file()
-
-    def test_create_fallback_doc_frontmatter_status_with_errors(self, tmp_path):
-        """Verify status is 'completed_with_errors' when stderr is not empty."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some stdout", "Error occurred", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Extract frontmatter
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        assert frontmatter["status"] == "completed_with_errors"
-
-    def test_create_fallback_doc_frontmatter_status_completed(self, tmp_path):
-        """Verify status is 'completed' when stderr is empty."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some stdout", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        assert frontmatter["status"] == "completed"
-
-    def test_create_fallback_doc_includes_stdout(self, tmp_path):
-        """Verify stdout is included in code block."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        test_stdout = "Edited file: /path/to/file.py\nRead file: /path/to/another.py"
-        _create_fallback_updates_doc(
-            targets, test_stdout, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "## Standard Output" in content
-        assert test_stdout in content
-
-    def test_create_fallback_doc_includes_stderr(self, tmp_path):
-        """Verify stderr is included when not empty."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        test_stderr = "Error: File not found\nWarning: Validation failed"
-        _create_fallback_updates_doc(
-            targets, "Some stdout", test_stderr, "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "## Standard Error" in content
-        assert test_stderr in content
-
-    def test_create_fallback_doc_omits_stderr_section_when_empty(self, tmp_path):
-        """Verify stderr section is omitted when stderr is empty string."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some stdout", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "## Standard Error" not in content
-
-    def test_create_fallback_doc_detects_edited_files(self, tmp_path):
-        """Verify 'Edited file: /path' pattern is detected and listed."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        stdout = "Edited file: /Users/kit/Code/buildspec/.epics/my-epic/my-epic.epic.yaml\nSome other output"
-        _create_fallback_updates_doc(
-            targets, stdout, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "## Files Potentially Modified" in content
-        assert "/Users/kit/Code/buildspec/.epics/my-epic/my-epic.epic.yaml" in content
-
-    def test_create_fallback_doc_detects_written_files(self, tmp_path):
-        """Verify 'Wrote file: /path' pattern is detected and listed."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        stdout = "Wrote file: /path/to/new/file.md\nCompleted successfully"
-        _create_fallback_updates_doc(
-            targets, stdout, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "/path/to/new/file.md" in content
-
-    def test_create_fallback_doc_deduplicates_file_paths(self, tmp_path):
-        """Verify same file path listed only once even if edited multiple times."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        stdout = """Edited file: /path/to/file.py
-Read file: /path/to/file.py
-Edited file: /path/to/file.py
-Wrote file: /path/to/file.py"""
-        _create_fallback_updates_doc(
-            targets, stdout, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Count occurrences of the file path - should only appear once in list
-        file_path = "/path/to/file.py"
-        list_section = content.split("## Files Potentially Modified")[1].split("##")[0]
-        occurrences = list_section.count(f"`{file_path}`")
-        assert occurrences == 1
-
-    def test_create_fallback_doc_empty_stdout(self, tmp_path):
-        """Verify 'No output' message when stdout is empty."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "No output" in content
-
-    def test_create_fallback_doc_empty_stderr(self, tmp_path):
-        """Verify stderr section handling when stderr is empty."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some output", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Empty stderr should result in "completed" status and no stderr section
-        assert "## Standard Error" not in content
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-        assert frontmatter["status"] == "completed"
-
-    def test_create_fallback_doc_includes_next_steps(self, tmp_path):
-        """Verify 'Next Steps' section provides manual verification guidance."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "Some output", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "## Next Steps" in content
-        assert "Review the stdout and stderr logs" in content
-        assert "Manually verify the changes" in content
-
-    def test_create_fallback_doc_utf8_encoding(self, tmp_path):
-        """Verify file is written with UTF-8 encoding."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic-émojis-🎉",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        stdout_with_unicode = "Edited file: /path/to/file-émoji-🎉.py"
-        _create_fallback_updates_doc(
-            targets, stdout_with_unicode, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        assert "test-epic-émojis-🎉" in content
-        assert "file-émoji-🎉.py" in content
-
-    def test_create_fallback_doc_frontmatter_date(self, tmp_path):
-        """Verify date field uses current date in YYYY-MM-DD format."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "output", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        # Verify date format YYYY-MM-DD
-        date_pattern = r"^\d{4}-\d{2}-\d{2}$"
-        date_str = (
-            frontmatter["date"]
-            if isinstance(frontmatter["date"], str)
-            else frontmatter["date"].strftime("%Y-%m-%d")
-        )
-        assert re.match(date_pattern, date_str)
-        assert date_str == datetime.now().strftime("%Y-%m-%d")
-
-    def test_create_fallback_doc_frontmatter_epic_name(self, tmp_path):
-        """Verify epic field matches targets.epic_name."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="my-special-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "output", "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        assert frontmatter["epic"] == "my-special-epic"
-
-    def test_create_fallback_doc_frontmatter_session_ids(self, tmp_path):
-        """Verify both builder and reviewer session IDs are included."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-session-789",
-            review_type="epic-file",
-        )
-
-        _create_fallback_updates_doc(
-            targets, "output", "", "builder-session-123"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        assert frontmatter["builder_session_id"] == "builder-session-123"
-        assert frontmatter["reviewer_session_id"] == "reviewer-session-789"
-
-    def test_create_fallback_doc_long_stdout(self, tmp_path):
-        """Verify function handles very long stdout (100000+ chars)."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        # Create very long stdout
-        long_stdout = "Line of output\n" * 10000  # ~150K chars
-        _create_fallback_updates_doc(
-            targets, long_stdout, "", "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        assert fallback_path.exists()
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Verify long content is included
-        assert len(content) > 100000
-        assert "Line of output" in content
-
-    def test_create_fallback_doc_special_chars_in_output(self, tmp_path):
-        """Verify special characters in stdout/stderr don't break markdown formatting."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="test-epic",
-            reviewer_session_id="reviewer-123",
-            review_type="epic-file",
-        )
-
-        special_stdout = "```\n# Header\n**Bold** _italic_\n[link](url)\n<!-- comment -->"
-        special_stderr = "Error: `code` **failed**"
-        _create_fallback_updates_doc(
-            targets, special_stdout, special_stderr, "builder-456"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Verify special chars are preserved in code blocks
-        assert "```\n# Header" in content
-        assert "**Bold**" in content
-        assert "`code`" in content
-
-
-class TestCreateFallbackDocIntegration:
-    """Integration tests for _create_fallback_updates_doc()."""
-
-    def test_create_fallback_doc_roundtrip(self, tmp_path):
-        """Create fallback doc, read it back, verify frontmatter is parseable."""
-        targets = ReviewTargets(
-            primary_file=Path("test.yaml"),
-            additional_files=[],
-            editable_directories=[],
-            artifacts_dir=tmp_path / "artifacts",
-            updates_doc_name="updates.md",
-            log_file_name="log.log",
-            error_file_name="errors.log",
-            epic_name="integration-test",
-            reviewer_session_id="reviewer-abc",
-            review_type="epic",
-        )
-
-        stdout = "Edited file: /path/to/file.py\nWrote file: /path/to/doc.md"
-        stderr = "Warning: Something happened"
-
-        _create_fallback_updates_doc(
-            targets, stdout, stderr, "builder-xyz"
-        )
-
-        fallback_path = tmp_path / "artifacts" / "updates.md"
-        content = fallback_path.read_text(encoding="utf-8")
-
-        # Parse frontmatter
-        frontmatter_end = content.find("\n---\n", 4)
-        frontmatter_text = content[4:frontmatter_end]
-        frontmatter = yaml.safe_load(frontmatter_text)
-
-        # Verify all frontmatter fields
-        assert "date" in frontmatter
-        assert frontmatter["epic"] == "integration-test"
-        assert frontmatter["builder_session_id"] == "builder-xyz"
-        assert frontmatter["reviewer_session_id"] == "reviewer-abc"
-        assert frontmatter["status"] == "completed_with_errors"
-
-        # Verify body sections
-        body = content[frontmatter_end + 5:]
-        assert "## Status" in body
-        assert "## What Happened" in body
-        assert "## Standard Output" in body
-        assert "## Standard Error" in body
-        assert "## Files Potentially Modified" in body
-        assert "## Next Steps" in body
-
-        # Verify file detection worked
-        assert "/path/to/file.py" in content
-        assert "/path/to/doc.md" in content
-
-
 class TestApplyReviewFeedback:
     """Test suite for apply_review_feedback() function."""
 
@@ -2223,10 +1669,10 @@ status: completed
             for call in mock_console.print.call_args_list
         )
 
-    def test_apply_review_feedback_template_not_updated_creates_fallback(
+    def test_apply_review_feedback_template_not_updated_stays_in_progress(
         self, tmp_path, mocker
     ):
-        """Verify fallback created when Claude doesn't update template (status=in_progress)."""
+        """Verify template stays in_progress when Claude doesn't update it (no fallback created)."""
         from cli.utils.review_feedback import apply_review_feedback
 
         # Create test files
@@ -2273,14 +1719,19 @@ status: completed
             console=mock_console,
         )
 
-        # Verify fallback was created (because template wasn't updated)
+        # Verify template stays as in_progress (not replaced with fallback)
         updates_path = artifacts_dir / "updates.md"
         assert updates_path.exists()
         content = updates_path.read_text(encoding="utf-8")
 
-        # Template should have been replaced with fallback
-        assert "status: completed" in content or "status: completed_with_errors" in content
-        assert "## Standard Output" in content
+        # Template should remain in_progress (NOT completed)
+        assert "status: in_progress" in content
+        assert "status: completed" not in content
+        assert "status: completed_with_errors" not in content
+
+        # Verify console shows incomplete warning
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+        assert any("incomplete" in call.lower() for call in print_calls)
 
     def test_apply_review_feedback_logs_stdout_stderr(
         self, tmp_path, mocker
@@ -2718,7 +2169,7 @@ Done""",
     def test_apply_review_feedback_validates_frontmatter_status(
         self, tmp_path, mocker
     ):
-        """Verify validation logic checks frontmatter status field."""
+        """Verify validation logic checks frontmatter status field and returns early when incomplete."""
         from cli.utils.review_feedback import apply_review_feedback
 
         # Create test files
@@ -2750,11 +2201,6 @@ Done""",
         # Template will remain in_progress (Claude didn't update it)
         mocker.patch("subprocess.run", return_value=mock_result)
 
-        # Spy on _create_fallback_updates_doc
-        mock_fallback = mocker.patch(
-            "cli.utils.review_feedback._create_fallback_updates_doc"
-        )
-
         mock_console = mocker.Mock()
         mock_console.status.return_value.__enter__ = mocker.Mock()
         mock_console.status.return_value.__exit__ = mocker.Mock()
@@ -2770,8 +2216,15 @@ Done""",
             console=mock_console,
         )
 
-        # Verify fallback was called (because status stayed in_progress)
-        mock_fallback.assert_called_once()
+        # Verify console shows incomplete message (yellow warning)
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+        assert any("incomplete" in call.lower() for call in print_calls)
+
+        # Verify template still has status: in_progress (not replaced)
+        template_path = artifacts_dir / "updates.md"
+        assert template_path.exists()
+        content = template_path.read_text(encoding="utf-8")
+        assert "status: in_progress" in content
 
     def test_apply_review_feedback_end_to_end_with_real_files(
         self, tmp_path, mocker

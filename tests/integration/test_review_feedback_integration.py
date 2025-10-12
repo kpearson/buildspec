@@ -475,10 +475,10 @@ class TestCreateTicketsWithEpicReview:
 class TestErrorHandling:
     """Test suite for error handling scenarios."""
 
-    def test_fallback_documentation_on_claude_failure(
+    def test_template_stays_in_progress_on_claude_failure(
         self, temp_epic_dir, mock_console, mock_project_context
     ):
-        """Verify fallback documentation is created when Claude fails."""
+        """Verify template stays in_progress when Claude fails (no fallback created)."""
         epic_file = temp_epic_dir / "simple-epic.epic.yaml"
         review_artifact = (
             temp_epic_dir / "artifacts" / "epic-file-review-artifact.md"
@@ -518,17 +518,20 @@ class TestErrorHandling:
                 console=mock_console,
             )
 
-        # Verify fallback documentation was created
+        # Verify template stays as in_progress (not replaced with fallback)
         updates_doc = artifacts_dir / "epic-file-review-updates.md"
         assert updates_doc.exists()
 
         content = updates_doc.read_text()
 
-        # Fallback doc should have error status
-        assert (
-            "status: completed_with_errors" in content
-            or "status: in_progress" not in content
-        )
+        # Template should remain in_progress (NOT completed)
+        assert "status: in_progress" in content
+        assert "status: completed" not in content
+        assert "status: completed_with_errors" not in content
+
+        # Verify console shows incomplete warning
+        print_calls = [str(call) for call in mock_console.print.call_args_list]
+        assert any("incomplete" in call.lower() for call in print_calls)
 
     def test_error_message_when_review_artifact_missing(
         self, temp_epic_dir, mock_console, mock_project_context
