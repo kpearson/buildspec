@@ -56,6 +56,7 @@ class GitOperations:
                 raise GitError(
                     f"Git command failed: {' '.join(args)}\n"
                     f"Exit code: {result.returncode}\n"
+                    f"stdout: {result.stdout}\n"
                     f"stderr: {result.stderr}"
                 )
             return result

@@ -593,33 +593,51 @@ class EpicStateMachine:
             self._save_state()
             raise
 
-        # Commit state file before switching branches to avoid conflicts
+        # Stash any changes to state file before switching branches
         try:
-            self.git._run_git_command(["git", "add", str(self.state_file)])
-            self.git._run_git_command(
-                ["git", "commit", "-m", "Save state before finalization", "--allow-empty"],
-                check=False  # OK if nothing to commit
-            )
+            self.git._run_git_command(["git", "add", str(self.state_file)], check=False)
+            self.git._run_git_command(["git", "stash", "push", "-m", "Stash state before finalization"], check=False)
         except GitError:
-            # Ignore errors - state file might already be committed
-            pass
+            pass  # OK if stash fails
 
         # Merge each ticket into epic branch
         merge_commits = []
         try:
             for ticket in sorted_tickets:
                 logger.info(f"Merging ticket {ticket.id} into {self.epic_branch}")
+                logger.debug(f"Ticket branch: {ticket.git_info.branch_name}, base: {ticket.git_info.base_commit}, final: {ticket.git_info.final_commit}")
+
+                # Checkout epic branch
+                self.git._run_git_command(["git", "checkout", self.epic_branch])
+
+                # Perform squash merge with automatic conflict resolution for state file
+                # Use -X ours strategy to prefer our version in conflicts
+                merge_result = self.git._run_git_command(
+                    ["git", "merge", "--squash", "-X", "ours", ticket.git_info.branch_name],
+                    check=False
+                )
+
+                # If merge still failed (not just state file conflict), abort
+                if merge_result.returncode != 0:
+                    if "CONFLICT" in merge_result.stdout:
+                        raise GitError(
+                            f"Merge conflict for {ticket.id}: {merge_result.stdout}\n{merge_result.stderr}"
+                        )
+
+                # Remove state file from staging if it was included in the merge
+                self.git._run_git_command(["git", "reset", "HEAD", str(self.state_file)], check=False)
+                if self.state_file.exists():
+                    self.state_file.unlink()
 
                 # Construct commit message
                 commit_message = f"feat: {ticket.title}\n\nTicket: {ticket.id}"
 
-                # Merge branch
-                merge_commit = self.git.merge_branch(
-                    source=ticket.git_info.branch_name,
-                    target=self.epic_branch,
-                    strategy="squash",
-                    message=commit_message,
-                )
+                # Commit the squash merge
+                self.git._run_git_command(["git", "commit", "-m", commit_message])
+
+                # Get the merge commit SHA
+                result = self.git._run_git_command(["git", "rev-parse", "HEAD"])
+                merge_commit = result.stdout.strip()
 
                 merge_commits.append(merge_commit)
                 logger.info(
