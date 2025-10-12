@@ -52,8 +52,12 @@ coordination_requirements:
         signature: "_run_gate(ticket: Ticket, gate: TransitionGate) -> GateResult"
       _save_state:
         arity: 0
-        intent: "Atomically save state to JSON via temp file and rename"
+        intent: "Atomically save state to JSON via temp file and rename with schema_version field"
         signature: "_save_state() -> None"
+      _calculate_dependency_depth:
+        arity: 1
+        intent: "Calculates dependency depth for ticket ordering (0 for no deps, 1 + max(dep_depth) for deps)"
+        signature: "_calculate_dependency_depth(ticket: Ticket) -> int"
 
     GitOperations:
       create_branch:
@@ -192,6 +196,8 @@ coordination_requirements:
       - "Stacked branches: each ticket branches from previous ticket's final commit"
       - "Deferred merging: collapse phase after all tickets complete"
       - "Atomic state writes: temp file + rename for consistency"
+      - "Epic baseline commit: The git commit SHA from which the epic branch was created (typically main branch HEAD at epic initialization). First ticket branches from this commit; subsequent tickets stack on previous ticket's final_commit."
+      - "Git error handling: All git operations raise GitError on failure with captured stderr; gates and state machine catch GitError and convert to GateResult/ticket failure"
     constraints:
       - "Synchronous execution only (concurrency = 1)"
       - "Squash merge strategy for all ticket branches"
@@ -340,7 +346,7 @@ tickets:
       - _build_prompt() -> str: Constructs instruction prompt including ticket file path, branch name, base commit, epic file path, workflow steps, output format requirements (JSON with final_commit, test_status, acceptance_criteria)
       - _parse_output(stdout: str) -> Dict[str, Any]: Parses JSON object from stdout (finds {...} block in text, handles JSONDecodeError)
 
-      Acceptance criteria: (1) Subprocess spawned with correct CLI arguments, (2) Timeout enforced at 3600 seconds (raises BuilderResult with error), (3) Structured JSON output parsed correctly from stdout, (4) Subprocess errors captured and returned in BuilderResult.error, (5) Prompt includes all necessary context (ticket, branch, epic, output requirements), (6) BuilderResult model (from ticket: create-state-models) properly populated
+      Acceptance criteria: (1) Subprocess spawned with correct CLI arguments, (2) Timeout enforced at 3600 seconds (returns BuilderResult with error, treated as ticket FAILED with standard failure cascade to dependents), (3) Structured JSON output parsed correctly from stdout, (4) Subprocess errors captured and returned in BuilderResult.error, (5) Prompt includes all necessary context (ticket, branch, epic, output requirements) and example JSON output format matching BuilderResult fields, (6) BuilderResult model (from ticket: create-state-models) properly populated
 
       Testing: Unit tests with mocked subprocess.run for success case (valid JSON), failure case (non-zero exit), timeout case (TimeoutExpired), and parsing failure case (invalid JSON). Integration test with simple echo subprocess that returns mock JSON. Coverage: 90% minimum.
 
@@ -368,7 +374,7 @@ tickets:
       - _all_tickets_completed() -> bool: Returns True if all tickets in COMPLETED, BLOCKED, or FAILED states
       - _has_active_tickets() -> bool: Returns True if any tickets in IN_PROGRESS or AWAITING_VALIDATION states
 
-      Acceptance criteria: (1) execute() method drives entire epic to completion without external intervention, (2) State transitions validated via gates before applying, (3) State persisted to epic-state.json atomically after each transition, (4) Synchronous execution enforced (LLMStartGate blocks if ticket active), (5) Stacked branch strategy implemented via CreateBranchGate, (6) Ticket execution loop handles success and failure cases, (7) State machine creates epic branch if not exists
+      Acceptance criteria: (1) execute() method drives entire epic to completion without external intervention, (2) State transitions validated via gates before applying, (3) State persisted to epic-state.json atomically after each transition with schema_version: 1 field, (4) Synchronous execution enforced (LLMStartGate blocks if ticket active), (5) Stacked branch strategy implemented via CreateBranchGate, (6) Ticket execution loop handles success and failure cases, (7) State machine creates epic branch if not exists
 
       Testing: Unit tests for each method with mocked dependencies (git, gates, builder). Integration test with simple 3-ticket epic using mocked builder to verify execution flow. Coverage: 85% minimum.
 
@@ -512,7 +518,7 @@ tickets:
       This ticket enhances __init__ method in state_machine.py (ticket: core-state-machine) to support resume=True flag that loads state from existing epic-state.json file. The state machine validates loaded state for consistency and continue execution from current state (skipping completed tickets). Key logic to implement:
       - __init__(epic_file: Path, resume: bool): If resume and state_file.exists() call _load_state(), else call _initialize_new_epic(), validate epic_file matches loaded state
       - _load_state(): Read epic-state.json, parse JSON, reconstruct Ticket objects with all fields from state, reconstruct EpicContext with loaded state, validate consistency (_validate_loaded_state), log resumed state
-      - _validate_loaded_state(): Check tickets in valid states, verify git branches exist for IN_PROGRESS/COMPLETED tickets via context.git.branch_exists_remote(), verify epic branch exists, check state file schema version
+      - _validate_loaded_state(): Check tickets in valid states, verify git branches exist for IN_PROGRESS/COMPLETED tickets via context.git.branch_exists_remote(), verify epic branch exists, check state file schema_version field equals 1 (current version)
 
       Acceptance criteria: (1) State loaded from epic-state.json with all ticket fields reconstructed (including git_info, timestamps, failure_reason), (2) State validation detects inconsistencies (missing branches, invalid states, schema mismatch), (3) execute() continues from current state (COMPLETED tickets skipped, IN_PROGRESS tickets fail and retry, READY tickets execute), (4) Resume flag required to prevent accidental resume, (5) Missing state file with resume=True raises FileNotFoundError with clear message
 
@@ -548,7 +554,7 @@ tickets:
       As a developer, I want an integration test for the happy path (3-ticket sequential epic completing successfully) so that I can verify the core execution flow works end-to-end with real git operations.
 
       This ticket creates tests/integration/epic/test_happy_path.py that tests complete epic execution with the state machine (ticket: core-state-machine). The test creates a fixture epic with 3 sequential tickets (A, B depends on A, C depends on B), runs execute(), and verifies stacked branches, ticket execution order, final collapse, and epic branch push. Uses real git repository (temporary directory) and mocked ClaudeTicketBuilder to simulate ticket implementation. Key test scenarios:
-      - test_happy_path_3_sequential_tickets(): Create fixture epic YAML with 3 tickets, create ticket markdown files, mock ClaudeTicketBuilder to return success with fake commits, initialize real git repo, run EpicStateMachine.execute(), verify branches created (ticket/A, ticket/B, ticket/C), verify ticket/B branched from A's final commit, verify ticket/C branched from B's final commit, verify all tickets transitioned to COMPLETED, verify epic branch contains all changes, verify ticket branches deleted, verify epic branch pushed to remote, verify state file persisted
+      - test_happy_path_3_sequential_tickets(): Create fixture epic YAML with 3 tickets, create ticket markdown files, mock ClaudeTicketBuilder to return success with fake commits, initialize real git repo, run EpicStateMachine.execute(), verify epic branch created if not exists (or uses existing epic branch), verify branches created (ticket/A, ticket/B, ticket/C), verify ticket/B branched from A's final commit, verify ticket/C branched from B's final commit, verify all tickets transitioned to COMPLETED, verify epic branch contains all changes, verify ticket branches deleted, verify epic branch pushed to remote, verify state file persisted
 
       Acceptance criteria: (1) Test creates fixture epic YAML and ticket files programmatically, (2) Test uses real git operations (temporary git repository), (3) Test verifies stacked branch structure (B from A, C from B), (4) Test verifies final epic branch contains all ticket changes, (5) Test verifies state file persisted correctly, (6) Test passes consistently (no flakiness)
 
@@ -567,16 +573,17 @@ tickets:
       This ticket creates tests/integration/epic/test_failure_scenarios.py with multiple test cases covering failure semantics. Uses state machine (ticket: core-state-machine), failure handling (ticket: implement-failure-handling), and rollback logic (ticket: implement-rollback-logic). Tests use real git operations and mocked ClaudeTicketBuilder that returns failures for specific tickets. Key test scenarios:
       - test_critical_failure_triggers_rollback(): Epic with rollback_on_failure=true, ticket A (critical) fails, verify rollback executed (all branches deleted, epic ROLLED_BACK)
       - test_noncritical_failure_blocks_dependents(): Ticket B (non-critical) fails, ticket D depends on B, verify D blocked but independent tickets continue
-      - test_diamond_dependency_partial_execution(): Diamond (A → B, A → C, B+C → D), B fails, verify C completes, D blocked, A completed
+      - test_diamond_dependency_partial_execution(): Diamond (A → B, A → C, B+C → D), B fails, verify C completes, D blocked, A completed. This test validates find_most_recent_commit() selects correct base when ticket D depends on both B and C.
       - test_multiple_independent_with_failure(): 3 independent tickets, middle one fails, verify other two complete, epic finalized without failed ticket
+      - test_validation_gate_failure(): Mock builder returns success with test_status="failing", verify ticket transitions to FAILED, verify dependent tickets blocked, verify epic continues with independent tickets
 
-      Acceptance criteria: (1) Critical failure test verifies rollback executed and branches deleted, (2) Non-critical failure test verifies blocking cascade to dependents, (3) Diamond dependency test verifies partial execution (C completes, D blocked), (4) All tests use real git operations, (5) All tests pass consistently
+      Acceptance criteria: (1) Critical failure test verifies rollback executed and branches deleted, (2) Non-critical failure test verifies blocking cascade to dependents, (3) Diamond dependency test verifies partial execution (C completes, D blocked) and find_most_recent_commit() logic, (4) Validation gate failure test verifies quality gate rejection works correctly, (5) All tests use real git operations, (6) All tests pass consistently
 
       Testing: These ARE the integration tests. Run them to verify failure handling. Expected runtime: <10 seconds total.
 
       Non-goals: No retry scenarios, no manual recovery intervention, no partial rollback.
 
-    depends_on: ["add-happy-path-integration-test", "implement-failure-handling", "implement-rollback-logic"]
+    depends_on: ["core-state-machine", "create-git-operations", "implement-failure-handling", "implement-rollback-logic", "implement-finalization-logic"]
     critical: true
     coordination_role: "Validates failure handling semantics with real scenarios"
 
@@ -593,6 +600,6 @@ tickets:
 
       Non-goals: No state file corruption testing, no concurrent resume attempts, no state migration.
 
-    depends_on: ["add-happy-path-integration-test", "implement-resume-from-state"]
+    depends_on: ["core-state-machine", "create-git-operations", "implement-resume-from-state"]
     critical: false
     coordination_role: "Validates resumability and state persistence"

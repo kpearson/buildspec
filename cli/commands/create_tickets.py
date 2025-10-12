@@ -316,9 +316,8 @@ def command(
 
                         # Apply review feedback to epic and tickets
                         try:
-                            epic_dir = epic_file_path.parent
-                            tickets_dir = epic_dir / "tickets"
-                            artifacts_dir = epic_dir / "artifacts"
+                            # Use the same tickets_dir that was calculated above
+                            # (respects --output-dir flag)
                             epic_name = epic_dir.name
 
                             # Collect all ticket markdown files

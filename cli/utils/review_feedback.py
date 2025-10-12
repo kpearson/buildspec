@@ -4,11 +4,10 @@ This module provides the ReviewTargets dataclass, which serves as a
 dependency injection container for review feedback application workflows.
 """
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Literal, Set
+from typing import TYPE_CHECKING, List, Literal
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -170,263 +169,6 @@ This template will be replaced by Claude with documentation of changes made.
     # Write template to file with UTF-8 encoding
     template_path.write_text(template_content, encoding="utf-8")
 
-
-def _create_fallback_updates_doc(
-    targets: ReviewTargets, stdout: str, stderr: str, builder_session_id: str
-) -> None:
-    """Create fallback documentation when Claude fails to update template.
-
-    This function serves as a safety net when Claude fails to complete
-    the review feedback application process. It analyzes stdout/stderr
-    to extract insights, detects which files were potentially modified,
-    and creates comprehensive documentation to aid manual verification.
-
-    The fallback document includes:
-    - Complete frontmatter with status (completed_with_errors or completed)
-    - Analysis of what happened based on stdout/stderr
-    - Full stdout and stderr logs in code blocks
-    - List of files that may have been modified (detected from stdout patterns)
-    - Guidance for manual verification and next steps
-
-    Args:
-        targets: ReviewTargets configuration containing file paths/metadata
-        stdout: Standard output from Claude session (file operations log)
-        stderr: Standard error from Claude session (errors and warnings)
-        builder_session_id: Session ID of the builder session
-
-    Side Effects:
-        Writes a markdown file with frontmatter to:
-        targets.artifacts_dir / targets.updates_doc_name
-
-    Analysis Strategy:
-        - Parses stdout for file modification patterns:
-          * "Edited file: /path/to/file"
-          * "Wrote file: /path/to/file"
-          * "Read file: /path/to/file" (indicates potential edits)
-        - Extracts unique file paths and deduplicates them
-        - Sets status based on stderr presence:
-          * "completed_with_errors" if stderr is not empty
-          * "completed" if stderr is empty (Claude may have succeeded silently)
-        - Handles empty stdout/stderr gracefully with "No output" messages
-
-    Example:
-        targets = ReviewTargets(
-            artifacts_dir=Path(".epics/my-epic/artifacts"),
-            updates_doc_name="epic-file-review-updates.md",
-            epic_name="my-epic",
-            reviewer_session_id="abc-123",
-            ...
-        )
-        _create_fallback_updates_doc(  # noqa: E501
-            targets=targets,
-            stdout="Edited file: /path/to/epic.yaml\\nRead: /path/to/ticket.md",
-            stderr="Warning: Some validation failed",
-            builder_session_id="xyz-789"
-        )
-    """
-    # Determine status based on stderr presence
-    status = "completed_with_errors" if stderr.strip() else "completed"
-
-    # Detect file modifications from stdout
-    modified_files = _detect_modified_files(stdout)
-
-    # Build frontmatter
-    today = datetime.now().strftime("%Y-%m-%d")
-    frontmatter = f"""---
-date: {today}
-epic: {targets.epic_name}
-builder_session_id: {builder_session_id}
-reviewer_session_id: {targets.reviewer_session_id}
-status: {status}
----"""
-
-    # Build status section
-    status_section = """## Status
-
-Claude did not update the template documentation file as expected.
-This fallback document was automatically created to preserve the
-session output and provide debugging information."""
-
-    # Build what happened section
-    what_happened = _analyze_output(stdout, stderr)
-    what_happened_section = f"""## What Happened
-
-{what_happened}"""
-
-    # Build stdout section
-    stdout_content = stdout if stdout.strip() else "No output"
-    stdout_section = f"""## Standard Output
-
-```
-{stdout_content}
-```"""
-
-    # Build stderr section (only if stderr is not empty)
-    stderr_section = ""
-    if stderr.strip():
-        stderr_section = f"""
-
-## Standard Error
-
-```
-{stderr}
-```"""
-
-    # Build files potentially modified section
-    files_section = """
-
-## Files Potentially Modified"""
-    if modified_files:
-        files_section += (
-            "\n\nThe following files may have been edited "
-            "based on stdout analysis:\n"
-        )
-        for file_path in sorted(modified_files):
-            files_section += f"- `{file_path}`\n"
-    else:
-        files_section += "\n\nNo file modifications detected in stdout."
-
-    # Build next steps section
-    next_steps_section = """
-
-## Next Steps
-
-1. Review the stdout and stderr logs above to understand what happened
-2. Check if any files were modified by comparing timestamps
-3. Manually verify the changes if files were edited
-4. Review the original review artifact for recommended changes
-5. Apply any missing changes manually if needed
-6. Validate Priority 1 and Priority 2 fixes have been addressed"""
-
-    # Combine all sections
-    fallback_content = f"""{frontmatter}
-
-# Epic File Review Updates
-
-{status_section}
-
-{what_happened_section}
-
-{stdout_section}{stderr_section}{files_section}{next_steps_section}
-"""
-
-    # Create artifacts directory if it doesn't exist
-    targets.artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write to file with UTF-8 encoding
-    output_path = targets.artifacts_dir / targets.updates_doc_name
-    output_path.write_text(fallback_content, encoding="utf-8")
-
-
-def _detect_modified_files(stdout: str) -> Set[str]:
-    """Detect file paths that were potentially modified from stdout.
-
-    Looks for patterns like:
-    - "Edited file: /path/to/file"
-    - "Wrote file: /path/to/file"
-    - "Read file: /path/to/file" (may indicate edits)
-
-    Args:
-        stdout: Standard output from Claude session
-
-    Returns:
-        Set of unique file paths that were potentially modified
-    """
-    modified_files: Set[str] = set()
-
-    # Pattern 1: "Edited file: /path/to/file"
-    edited_pattern = r"Edited file:\s+(.+?)(?:\n|$)"
-    for match in re.finditer(edited_pattern, stdout):
-        file_path = match.group(1).strip()
-        modified_files.add(file_path)
-
-    # Pattern 2: "Wrote file: /path/to/file"
-    wrote_pattern = r"Wrote file:\s+(.+?)(?:\n|$)"
-    for match in re.finditer(wrote_pattern, stdout):
-        file_path = match.group(1).strip()
-        modified_files.add(file_path)
-
-    # Pattern 3: "Read file: /path/to/file" followed by "Write" or "Edit"
-    # This is more conservative - only count reads that are near writes
-    read_pattern = r"Read file:\s+(.+?)(?:\n|$)"
-    read_matches = list(re.finditer(read_pattern, stdout))
-
-    # Check if there are any "Write" or "Edit" operations nearby
-    has_write_operations = bool(re.search(r"(Edited|Wrote) file:", stdout))
-
-    if has_write_operations:
-        # Only include read files that appear before write operations
-        for match in read_matches:
-            file_path = match.group(1).strip()
-            # Check if this file is mentioned in any write/edit operations
-            if file_path in stdout[match.end() :]:
-                modified_files.add(file_path)
-
-    return modified_files
-
-
-def _analyze_output(stdout: str, stderr: str) -> str:
-    """Analyze stdout and stderr to provide insights about what happened.
-
-    Args:
-        stdout: Standard output from Claude session
-        stderr: Standard error from Claude session
-
-    Returns:
-        Human-readable analysis of the session output
-    """
-    analysis_parts = []
-
-    # Analyze stderr first (most critical)
-    if stderr.strip():
-        error_count = len(stderr.strip().split("\n"))
-        analysis_parts.append(
-            f"The Claude session produced error output ({error_count} lines). "
-            "This indicates that something went wrong during execution. "
-            "See the Standard Error section below for details."
-        )
-
-    # Analyze stdout
-    if stdout.strip():
-        # Check for file operations
-        edit_count = len(re.findall(r"Edited file:", stdout))
-        write_count = len(re.findall(r"Wrote file:", stdout))
-        read_count = len(re.findall(r"Read file:", stdout))
-
-        operation_parts = []
-        if read_count > 0:
-            operation_parts.append(f"{read_count} file read(s)")
-        if edit_count > 0:
-            operation_parts.append(f"{edit_count} file edit(s)")
-        if write_count > 0:
-            operation_parts.append(f"{write_count} file write(s)")
-
-        if operation_parts:
-            operations = ", ".join(operation_parts)
-            analysis_parts.append(
-                f"Claude performed {operations}. However, the template "
-                "documentation file was not properly updated."
-            )
-        else:
-            analysis_parts.append(
-                "Claude executed but no file operation patterns were "
-                "detected in stdout. The session may have completed "
-                "without making changes."
-            )
-    else:
-        analysis_parts.append(
-            "No standard output was captured. The Claude session may have "
-            "failed to execute or produced no output."
-        )
-
-    # Combine analysis
-    if analysis_parts:
-        return " ".join(analysis_parts)
-    else:
-        return (
-            "The Claude session completed but did not update the template "
-            "file. No additional information is available."
-        )
 
 def _build_feedback_prompt(
     review_content: str, targets: ReviewTargets, builder_session_id: str
@@ -870,43 +612,28 @@ def apply_review_feedback(
         except Exception as e:
             logger.warning(f"Failed to validate template documentation: {e}")
 
-        # Step 6: Create fallback documentation if needed
+        # Step 6: Check if documentation was completed
         if status == "in_progress":
             logger.warning(
                 "Template documentation not updated by Claude "
                 "(status still in_progress)"
             )
             console.print(
-                "[yellow]Claude did not complete documentation, "
-                "creating fallback...[/yellow]"
-            )
-
-            _create_fallback_updates_doc(
-                targets=targets,
-                stdout=claude_stdout,
-                stderr=claude_stderr,
-                builder_session_id=builder_session_id,
-            )
-
-            fallback_doc = targets.artifacts_dir / targets.updates_doc_name
-            console.print(
-                f"[yellow]Fallback documentation created: "
-                f"{fallback_doc}[/yellow]"
+                "[yellow]Review feedback application incomplete[/yellow]"
             )
             if error_file_path.exists():
                 console.print(
                     f"[yellow]Check error log: {error_file_path}[/yellow]"
                 )
+            if log_file_path.exists():
+                console.print(
+                    f"[yellow]Check log: {log_file_path}[/yellow]"
+                )
+            # Template stays with status: in_progress, so auto-resume will retry
+            return
         else:
             # Success!
             console.print("[green]Review feedback applied successfully[/green]")
-
-            # Count files modified (if detectable from stdout)
-            modified_files = _detect_modified_files(claude_stdout)
-            if modified_files:
-                console.print(
-                    f"  [dim]• {len(modified_files)} file(s) updated[/dim]"
-                )
 
             doc_path = targets.artifacts_dir / targets.updates_doc_name
             console.print(f"  [dim]• Documentation: {doc_path}[/dim]")
