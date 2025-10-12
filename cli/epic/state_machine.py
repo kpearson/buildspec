@@ -55,11 +55,11 @@ class EpicStateMachine:
 
         Args:
             epic_file: Path to the epic YAML file
-            resume: If True, resume from existing state file (not implemented yet)
+            resume: If True, resume from existing state file
 
         Raises:
-            FileNotFoundError: If epic file doesn't exist
-            ValueError: If epic YAML is invalid
+            FileNotFoundError: If epic file doesn't exist or state file missing with resume=True
+            ValueError: If epic YAML is invalid or loaded state is inconsistent
         """
         self.epic_file = epic_file
         self.epic_dir = epic_file.parent
@@ -76,34 +76,19 @@ class EpicStateMachine:
         # Initialize git operations
         self.git = GitOperations()
 
-        # Initialize tickets from epic config
-        self.tickets: dict[str, Ticket] = {}
-        self._initialize_tickets()
+        # Initialize or resume from state
+        if resume and self.state_file.exists():
+            self._load_state()
+            logger.info(f"Resumed epic state machine: {self.epic_id}")
+        elif resume:
+            raise FileNotFoundError(
+                f"Cannot resume: state file not found at {self.state_file}. "
+                f"Remove --resume flag to start a new epic execution."
+            )
+        else:
+            self._initialize_new_epic()
+            logger.info(f"Initialized epic state machine: {self.epic_id}")
 
-        # Get baseline commit (current HEAD for now)
-        result = self.git._run_git_command(["git", "rev-parse", "HEAD"])
-        self.baseline_commit = result.stdout.strip()
-
-        # Create epic context
-        self.context = EpicContext(
-            epic_id=self.epic_id,
-            epic_branch=self.epic_branch,
-            baseline_commit=self.baseline_commit,
-            tickets=self.tickets,
-            git=self.git,
-            epic_config=self.epic_config,
-        )
-
-        # Initialize epic state
-        self.epic_state = EpicState.EXECUTING
-
-        # Ensure artifacts directory exists
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Save initial state
-        self._save_state()
-
-        logger.info(f"Initialized epic state machine: {self.epic_id}")
         logger.info(f"Baseline commit: {self.baseline_commit}")
         logger.info(f"Epic branch: {self.epic_branch}")
         logger.info(f"Total tickets: {len(self.tickets)}")
@@ -480,11 +465,78 @@ class EpicStateMachine:
     def _execute_rollback(self) -> None:
         """Execute rollback by cleaning up branches and resetting state.
 
-        Placeholder for now - will be implemented in ticket: implement-rollback-logic.
+        Deletes all ticket branches (local and remote), resets epic branch to
+        baseline commit, and transitions epic to ROLLED_BACK state. This
+        operation is idempotent and safe to call multiple times.
+
+        Branch deletion failures are logged as warnings but don't stop the
+        rollback process to ensure maximum cleanup even in degraded states.
         """
-        logger.warning("Rollback requested but not yet implemented")
-        self.epic_state = EpicState.FAILED
+        logger.info("Starting epic rollback - cleaning up branches and resetting state")
+
+        # Delete all ticket branches (both local and remote)
+        for ticket_id, ticket in self.tickets.items():
+            if ticket.git_info and ticket.git_info.branch_name:
+                try:
+                    logger.info(f"Deleting branch {ticket.git_info.branch_name} for ticket {ticket_id}")
+
+                    # Delete local branch
+                    try:
+                        self.git.delete_branch(ticket.git_info.branch_name, remote=False)
+                        logger.debug(f"Deleted local branch {ticket.git_info.branch_name}")
+                    except GitError as e:
+                        logger.warning(f"Failed to delete local branch {ticket.git_info.branch_name}: {e}")
+
+                    # Delete remote branch
+                    try:
+                        self.git.delete_branch(ticket.git_info.branch_name, remote=True)
+                        logger.debug(f"Deleted remote branch {ticket.git_info.branch_name}")
+                    except GitError as e:
+                        logger.warning(f"Failed to delete remote branch {ticket.git_info.branch_name}: {e}")
+
+                except Exception as e:
+                    # Catch any unexpected errors and log, but continue rollback
+                    logger.warning(
+                        f"Unexpected error deleting branch {ticket.git_info.branch_name} "
+                        f"for ticket {ticket_id}: {e}"
+                    )
+
+        # Reset epic branch to baseline commit
+        try:
+            logger.info(f"Resetting epic branch {self.epic_branch} to baseline commit {self.baseline_commit}")
+
+            # Check if epic branch exists
+            if self.git.branch_exists_remote(self.epic_branch):
+                # Checkout epic branch
+                self.git._run_git_command(["git", "checkout", self.epic_branch])
+
+                # Reset to baseline commit
+                self.git._run_git_command(["git", "reset", "--hard", self.baseline_commit])
+
+                # Force push to remote
+                result = self.git._run_git_command(
+                    ["git", "push", "--force", "origin", self.epic_branch],
+                    check=False
+                )
+
+                if result.returncode != 0:
+                    logger.warning(f"Failed to force push epic branch: {result.stderr}")
+                else:
+                    logger.info(f"Successfully reset and force pushed epic branch {self.epic_branch}")
+            else:
+                logger.info(f"Epic branch {self.epic_branch} does not exist on remote, skipping reset")
+
+        except GitError as e:
+            logger.error(f"Failed to reset epic branch: {e}")
+            # Continue with state transition even if reset fails
+        except Exception as e:
+            logger.error(f"Unexpected error resetting epic branch: {e}")
+
+        # Transition epic to ROLLED_BACK
+        self.epic_state = EpicState.ROLLED_BACK
         self._save_state()
+
+        logger.info("Rollback complete - all branches deleted and epic state set to ROLLED_BACK")
 
     def _topological_sort(self, tickets: list[Ticket]) -> list[Ticket]:
         """Sort tickets in dependency order (dependencies before dependents).
@@ -830,3 +882,197 @@ class EpicStateMachine:
         """
         active_states = {TicketState.IN_PROGRESS, TicketState.AWAITING_VALIDATION}
         return any(ticket.state in active_states for ticket in self.tickets.values())
+
+    def _initialize_new_epic(self) -> None:
+        """Initialize a new epic execution from scratch.
+
+        Sets up tickets from epic config, gets baseline commit, creates epic context,
+        and saves initial state.
+        """
+        # Initialize tickets from epic config
+        self.tickets: dict[str, Ticket] = {}
+        self._initialize_tickets()
+
+        # Get baseline commit (current HEAD)
+        result = self.git._run_git_command(["git", "rev-parse", "HEAD"])
+        self.baseline_commit = result.stdout.strip()
+
+        # Create epic context
+        self.context = EpicContext(
+            epic_id=self.epic_id,
+            epic_branch=self.epic_branch,
+            baseline_commit=self.baseline_commit,
+            tickets=self.tickets,
+            git=self.git,
+            epic_config=self.epic_config,
+        )
+
+        # Initialize epic state
+        self.epic_state = EpicState.EXECUTING
+
+        # Ensure artifacts directory exists
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save initial state
+        self._save_state()
+
+    def _load_state(self) -> None:
+        """Load epic state from existing epic-state.json file.
+
+        Reads the state file, parses JSON, reconstructs Ticket objects with all
+        fields from state, reconstructs EpicContext, validates consistency, and
+        logs resumed state.
+
+        Raises:
+            FileNotFoundError: If state file doesn't exist
+            ValueError: If state file is invalid or state is inconsistent
+            json.JSONDecodeError: If JSON is malformed
+        """
+        logger.info(f"Loading state from {self.state_file}")
+
+        # Read state file
+        try:
+            with open(self.state_file, "r") as f:
+                state_data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in state file: {e}")
+
+        # Validate epic file matches loaded state
+        loaded_epic_id = state_data.get("epic_id")
+        if loaded_epic_id != self.epic_id:
+            raise ValueError(
+                f"Epic ID mismatch: state file has '{loaded_epic_id}', "
+                f"but epic file is for '{self.epic_id}'"
+            )
+
+        # Load baseline commit and epic state
+        self.baseline_commit = state_data.get("baseline_commit")
+        epic_state_value = state_data.get("epic_state", "EXECUTING")
+        self.epic_state = EpicState(epic_state_value)
+
+        # Reconstruct tickets from state
+        self.tickets = {}
+        tickets_data = state_data.get("tickets", {})
+
+        for ticket_id, ticket_dict in tickets_data.items():
+            # Reconstruct GitInfo if present
+            git_info = None
+            if ticket_dict.get("git_info"):
+                git_info_dict = ticket_dict["git_info"]
+                git_info = GitInfo(
+                    branch_name=git_info_dict.get("branch_name"),
+                    base_commit=git_info_dict.get("base_commit"),
+                    final_commit=git_info_dict.get("final_commit"),
+                )
+
+            # Reconstruct AcceptanceCriteria
+            acceptance_criteria = [
+                AcceptanceCriterion(
+                    criterion=ac["criterion"],
+                    met=ac["met"]
+                )
+                for ac in ticket_dict.get("acceptance_criteria", [])
+            ]
+
+            # Reconstruct Ticket
+            ticket = Ticket(
+                id=ticket_dict["id"],
+                path=ticket_dict["path"],
+                title=ticket_dict["title"],
+                depends_on=ticket_dict.get("depends_on", []),
+                critical=ticket_dict.get("critical", False),
+                state=TicketState(ticket_dict["state"]),
+                git_info=git_info,
+                test_suite_status=ticket_dict.get("test_suite_status"),
+                acceptance_criteria=acceptance_criteria,
+                failure_reason=ticket_dict.get("failure_reason"),
+                blocking_dependency=ticket_dict.get("blocking_dependency"),
+                started_at=ticket_dict.get("started_at"),
+                completed_at=ticket_dict.get("completed_at"),
+            )
+
+            self.tickets[ticket_id] = ticket
+
+        # Create epic context
+        self.context = EpicContext(
+            epic_id=self.epic_id,
+            epic_branch=self.epic_branch,
+            baseline_commit=self.baseline_commit,
+            tickets=self.tickets,
+            git=self.git,
+            epic_config=self.epic_config,
+        )
+
+        # Validate loaded state
+        self._validate_loaded_state(state_data)
+
+        logger.info(f"Loaded {len(self.tickets)} tickets from state file")
+        logger.info(f"Epic state: {self.epic_state.value}")
+
+        # Log ticket states for visibility
+        for state_name in [TicketState.COMPLETED, TicketState.IN_PROGRESS,
+                           TicketState.FAILED, TicketState.BLOCKED]:
+            count = sum(1 for t in self.tickets.values() if t.state == state_name)
+            if count > 0:
+                logger.info(f"  {state_name.value}: {count} tickets")
+
+    def _validate_loaded_state(self, state_data: dict[str, Any]) -> None:
+        """Validate consistency of loaded state.
+
+        Checks schema version, ticket states, git branches, and epic branch existence.
+
+        Args:
+            state_data: The loaded state dictionary
+
+        Raises:
+            ValueError: If state is inconsistent
+        """
+        logger.info("Validating loaded state")
+
+        # Check schema version
+        schema_version = state_data.get("schema_version")
+        if schema_version != 1:
+            raise ValueError(
+                f"State file schema version mismatch: expected 1, got {schema_version}. "
+                f"State file may be from incompatible version."
+            )
+
+        # Verify epic branch exists
+        if not self.git.branch_exists_remote(self.epic_branch):
+            raise ValueError(
+                f"Epic branch '{self.epic_branch}' does not exist on remote. "
+                f"Cannot resume without epic branch."
+            )
+
+        # Validate ticket states and git branches
+        for ticket_id, ticket in self.tickets.items():
+            # Check for invalid state values
+            if ticket.state not in TicketState:
+                raise ValueError(
+                    f"Ticket {ticket_id} has invalid state: {ticket.state}"
+                )
+
+            # Verify branches exist for tickets that should have them
+            if ticket.state in [TicketState.BRANCH_CREATED, TicketState.IN_PROGRESS,
+                                TicketState.AWAITING_VALIDATION, TicketState.COMPLETED]:
+                if not ticket.git_info or not ticket.git_info.branch_name:
+                    raise ValueError(
+                        f"Ticket {ticket_id} in state {ticket.state.value} "
+                        f"but has no git_info.branch_name"
+                    )
+
+                # Verify branch exists on remote
+                if not self.git.branch_exists_remote(ticket.git_info.branch_name):
+                    raise ValueError(
+                        f"Ticket {ticket_id} branch '{ticket.git_info.branch_name}' "
+                        f"does not exist on remote"
+                    )
+
+            # Verify completed tickets have final_commit
+            if ticket.state == TicketState.COMPLETED:
+                if not ticket.git_info or not ticket.git_info.final_commit:
+                    raise ValueError(
+                        f"Ticket {ticket_id} is COMPLETED but has no final_commit"
+                    )
+
+        logger.info("State validation passed")
