@@ -582,6 +582,72 @@ def handle_split_workflow(
         raise
 
 
+def _check_epic_exists(epic_dir: Path, expected_base: str) -> Optional[Path]:
+    """Check if epic YAML file already exists.
+
+    Args:
+        epic_dir: Directory to search for epic file
+        expected_base: Expected base name for epic file
+
+    Returns:
+        Path to epic file if found, None otherwise
+    """
+    # Look for .epic.yaml files
+    yaml_files = list(epic_dir.glob("*.epic.yaml"))
+
+    for yaml_file in yaml_files:
+        if expected_base in yaml_file.stem:
+            return yaml_file
+
+    return None
+
+
+def _check_review_completed(artifacts_dir: Path, review_filename: str) -> bool:
+    """Check if review artifact exists.
+
+    Args:
+        artifacts_dir: Artifacts directory
+        review_filename: Name of review file (e.g., "epic-file-review.md")
+
+    Returns:
+        True if review exists, False otherwise
+    """
+    review_path = artifacts_dir / review_filename
+    return review_path.exists()
+
+
+def _check_review_feedback_applied(artifacts_dir: Path, updates_filename: str) -> bool:
+    """Check if review feedback was successfully applied.
+
+    Args:
+        artifacts_dir: Artifacts directory
+        updates_filename: Name of updates doc (e.g., "epic-file-review-updates.md")
+
+    Returns:
+        True if review feedback applied successfully, False otherwise
+    """
+    import yaml
+
+    updates_path = artifacts_dir / updates_filename
+    if not updates_path.exists():
+        return False
+
+    try:
+        content = updates_path.read_text()
+        if not content.startswith("---"):
+            return False
+
+        # Parse frontmatter
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            return False
+
+        frontmatter = yaml.safe_load(parts[1])
+        return frontmatter.get("status") == "completed"
+    except Exception:
+        return False
+
+
 def command(
     planning_doc: str = typer.Argument(
         ...,
@@ -597,6 +663,12 @@ def command(
         False,
         "--no-split",
         help="Skip automatic epic splitting even if ticket count >= 13",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force full rebuild, ignore existing artifacts (destructive)",
     ),
 ):
     """Create epic file from planning document."""
@@ -627,13 +699,49 @@ def command(
             output=str(output) if output else None,
         )
 
-        # Print action
-        console.print(f"\n[bold]Creating epic from:[/bold] {planning_doc_path}")
+        # Determine epic directory and expected base name
+        epic_dir = planning_doc_path.parent
+        expected_base = planning_doc_path.stem.replace("-spec", "").replace(
+            "_spec", ""
+        )
+        artifacts_dir = epic_dir / "artifacts"
 
-        # Execute
-        runner = ClaudeRunner(context)
-        exit_code, session_id = runner.execute(prompt, console=console)
+        # Check for existing epic (auto-resume detection)
+        existing_epic = _check_epic_exists(epic_dir, expected_base)
+        epic_exists = existing_epic is not None and not force
 
+        if epic_exists:
+            console.print(
+                f"\n[blue]Existing epic detected: {existing_epic.name}[/blue]"
+            )
+            console.print("[dim]Resuming from completed steps...[/dim]")
+
+        # Step 1: Create Epic YAML
+        session_id = None
+        exit_code = None
+
+        if force or not epic_exists:
+            if force and epic_exists:
+                console.print(
+                    "[yellow]⚠ --force flag: Rebuilding epic (existing file will be overwritten)[/yellow]"
+                )
+
+            # Print action
+            console.print(f"\n[bold]Creating epic from:[/bold] {planning_doc_path}")
+
+            # Execute
+            runner = ClaudeRunner(context)
+            exit_code, session_id = runner.execute(prompt, console=console)
+
+            if exit_code != 0:
+                raise typer.Exit(code=exit_code)
+
+            console.print("[green]✓ Epic YAML created[/green]")
+        else:
+            console.print("[green]✓ Epic YAML exists (skipping creation)[/green]")
+            exit_code = 0  # Assume success if epic already exists
+
+        # Find epic path for subsequent steps
         if exit_code == 0:
             # Post-execution: find and validate epic filename
             epic_dir = planning_doc_path.parent
@@ -668,57 +776,87 @@ def command(
             # Invoke epic review workflow
             if epic_path and epic_path.exists():
                 try:
-                    # Step 1: Review the epic
-                    review_artifact = invoke_epic_file_review(
-                        str(epic_path), session_id, context
+                    # Step 2: Epic file review
+                    review_completed = _check_review_completed(
+                        artifacts_dir, "epic-file-review.md"
                     )
 
-                    # Step 2: Apply review feedback if review succeeded
-                    if review_artifact:
-                        # Extract required parameters for ReviewTargets
-                        import re
-                        epic_file_path = Path(epic_path)
-                        epic_dir = epic_file_path.parent
-                        artifacts_dir = epic_dir / "artifacts"
-                        epic_name = epic_file_path.stem.replace(".epic", "")
-
-                        # Extract reviewer_session_id from review artifact
-                        reviewer_session_id = "unknown"
-                        try:
-                            review_content = Path(review_artifact).read_text()
-                            session_match = re.search(
-                                r'reviewer_session_id:\s*(\S+)',
-                                review_content
+                    review_artifact = None
+                    if force or not review_completed:
+                        if force and review_completed:
+                            console.print(
+                                "[yellow]⚠ --force flag: Re-running epic file review[/yellow]"
                             )
-                            if session_match:
-                                reviewer_session_id = session_match.group(1)
-                        except Exception:
-                            pass
 
-                        # Create ReviewTargets instance
-                        targets = ReviewTargets(
-                            primary_file=epic_file_path,
-                            additional_files=[],
-                            editable_directories=[epic_dir],
-                            artifacts_dir=artifacts_dir,
-                            updates_doc_name="epic-file-review-updates.md",
-                            log_file_name="epic-file-review.log",
-                            error_file_name="epic-file-review.error.log",
-                            epic_name=epic_name,
-                            reviewer_session_id=reviewer_session_id,
-                            review_type="epic-file"
+                        review_artifact = invoke_epic_file_review(
+                            str(epic_path), session_id, context
+                        )
+                    else:
+                        console.print(
+                            "[green]✓ Epic file review exists (skipping)[/green]"
+                        )
+                        review_artifact = str(artifacts_dir / "epic-file-review.md")
+
+                    # Step 3: Apply review feedback if review succeeded
+                    if review_artifact:
+                        feedback_applied = _check_review_feedback_applied(
+                            artifacts_dir, "epic-file-review-updates.md"
                         )
 
-                        # Call shared apply_review_feedback()
-                        apply_review_feedback(
-                            review_artifact_path=Path(review_artifact),
-                            builder_session_id=session_id,
-                            context=context,
-                            targets=targets,
-                            console=console
-                        )
+                        if force or not feedback_applied:
+                            if force and feedback_applied:
+                                console.print(
+                                    "[yellow]⚠ --force flag: Re-applying review feedback[/yellow]"
+                                )
 
-                    # Step 3: Validate ticket count and trigger split workflow if needed
+                            # Extract required parameters for ReviewTargets
+                            import re
+                            epic_file_path = Path(epic_path)
+                            epic_dir = epic_file_path.parent
+                            artifacts_dir = epic_dir / "artifacts"
+                            epic_name = epic_file_path.stem.replace(".epic", "")
+
+                            # Extract reviewer_session_id from review artifact
+                            reviewer_session_id = "unknown"
+                            try:
+                                review_content = Path(review_artifact).read_text()
+                                session_match = re.search(
+                                    r'reviewer_session_id:\s*(\S+)',
+                                    review_content
+                                )
+                                if session_match:
+                                    reviewer_session_id = session_match.group(1)
+                            except Exception:
+                                pass
+
+                            # Create ReviewTargets instance
+                            targets = ReviewTargets(
+                                primary_file=epic_file_path,
+                                additional_files=[],
+                                editable_directories=[epic_dir],
+                                artifacts_dir=artifacts_dir,
+                                updates_doc_name="epic-file-review-updates.md",
+                                log_file_name="epic-file-review.log",
+                                error_file_name="epic-file-review.error.log",
+                                epic_name=epic_name,
+                                reviewer_session_id=reviewer_session_id,
+                                review_type="epic-file"
+                            )
+
+                            # Call shared apply_review_feedback()
+                            apply_review_feedback(
+                                review_artifact_path=Path(review_artifact),
+                                builder_session_id=session_id,
+                                context=context,
+                                targets=targets,
+                                console=console
+                            )
+                        else:
+                            console.print(
+                                "[green]✓ Review feedback already applied (skipping)[/green]"
+                            )
+
+                    # Step 4: Validate ticket count and trigger split workflow if needed
                     epic_data = parse_epic_yaml(str(epic_path))
                     ticket_count = epic_data["ticket_count"]
 

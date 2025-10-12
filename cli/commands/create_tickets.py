@@ -128,6 +128,68 @@ def invoke_epic_review(
     return str(review_artifact)
 
 
+def _check_tickets_exist(tickets_dir: Path) -> bool:
+    """Check if ticket markdown files already exist.
+
+    Args:
+        tickets_dir: Tickets directory to check
+
+    Returns:
+        True if tickets exist, False otherwise
+    """
+    if not tickets_dir.exists():
+        return False
+
+    ticket_files = list(tickets_dir.glob("*.md"))
+    return len(ticket_files) > 0
+
+
+def _check_review_completed(artifacts_dir: Path, review_filename: str) -> bool:
+    """Check if review artifact exists.
+
+    Args:
+        artifacts_dir: Artifacts directory
+        review_filename: Name of review file (e.g., "epic-review.md")
+
+    Returns:
+        True if review exists, False otherwise
+    """
+    review_path = artifacts_dir / review_filename
+    return review_path.exists()
+
+
+def _check_review_feedback_applied(artifacts_dir: Path, updates_filename: str) -> bool:
+    """Check if review feedback was successfully applied.
+
+    Args:
+        artifacts_dir: Artifacts directory
+        updates_filename: Name of updates doc (e.g., "epic-review-updates.md")
+
+    Returns:
+        True if review feedback applied successfully, False otherwise
+    """
+    import yaml
+
+    updates_path = artifacts_dir / updates_filename
+    if not updates_path.exists():
+        return False
+
+    try:
+        content = updates_path.read_text()
+        if not content.startswith("---"):
+            return False
+
+        # Parse frontmatter
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            return False
+
+        frontmatter = yaml.safe_load(parts[1])
+        return frontmatter.get("status") == "completed"
+    except Exception:
+        return False
+
+
 def command(
     epic_file: str = typer.Argument(
         ..., help="Path to epic YAML file (or directory containing epic file)"
@@ -140,6 +202,12 @@ def command(
         "--project-dir",
         "-p",
         help="Project directory (default: auto-detect)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force full rebuild, ignore existing artifacts (destructive)",
     ),
 ):
     """Create ticket files from epic definition."""
@@ -170,84 +238,142 @@ def command(
             output_dir=str(output_dir) if output_dir else None,
         )
 
-        # Print action
-        console.print(f"\n[bold]Creating tickets from:[/bold] {epic_file_path}")
+        # Determine tickets directory and artifacts directory
+        epic_dir = epic_file_path.parent
+        tickets_dir = output_dir if output_dir else epic_dir / "tickets"
+        artifacts_dir = epic_dir / "artifacts"
 
-        # Execute
-        runner = ClaudeRunner(context)
-        exit_code, session_id = runner.execute(prompt, console=console)
+        # Check for existing tickets (auto-resume detection)
+        tickets_exist = _check_tickets_exist(tickets_dir) and not force
 
-        if exit_code == 0:
-            console.print("\n[green]✓ Tickets created successfully[/green]")
-            console.print(f"[dim]Session ID: {session_id}[/dim]")
+        if tickets_exist:
+            console.print(
+                f"\n[blue]Existing tickets detected in: {tickets_dir}[/blue]"
+            )
+            console.print("[dim]Resuming from completed steps...[/dim]")
 
-            # Invoke epic review workflow
-            try:
-                review_artifact = invoke_epic_review(
-                    epic_file_path, session_id, context
+        # Step 1: Create tickets
+        session_id = None
+        exit_code = None
+
+        if force or not tickets_exist:
+            if force and tickets_exist:
+                console.print(
+                    "[yellow]⚠ --force flag: Rebuilding tickets (existing files will be overwritten)[/yellow]"
                 )
 
-                if review_artifact:
+            # Print action
+            console.print(f"\n[bold]Creating tickets from:[/bold] {epic_file_path}")
+
+            # Execute
+            runner = ClaudeRunner(context)
+            exit_code, session_id = runner.execute(prompt, console=console)
+
+            if exit_code != 0:
+                raise typer.Exit(code=exit_code)
+
+            console.print("[green]✓ Tickets created[/green]")
+        else:
+            console.print("[green]✓ Tickets exist (skipping creation)[/green]")
+            exit_code = 0  # Assume success if tickets already exist
+
+        if exit_code == 0:
+            console.print(f"[dim]Session ID: {session_id}[/dim]") if session_id else None
+
+            # Step 2: Epic review
+            try:
+                review_completed = _check_review_completed(
+                    artifacts_dir, "epic-review.md"
+                )
+
+                review_artifact = None
+                if force or not review_completed:
+                    if force and review_completed:
+                        console.print(
+                            "[yellow]⚠ --force flag: Re-running epic review[/yellow]"
+                        )
+
+                    review_artifact = invoke_epic_review(
+                        epic_file_path, session_id, context
+                    )
+                else:
                     console.print(
-                        f"[dim]Review saved to: {review_artifact}[/dim]"
+                        "[green]✓ Epic review exists (skipping)[/green]"
+                    )
+                    review_artifact = str(artifacts_dir / "epic-review.md")
+
+                if review_artifact:
+                    # Step 3: Apply review feedback
+                    feedback_applied = _check_review_feedback_applied(
+                        artifacts_dir, "epic-review-updates.md"
                     )
 
-                    # Apply review feedback to epic and tickets
-                    try:
-                        epic_dir = epic_file_path.parent
-                        tickets_dir = epic_dir / "tickets"
-                        artifacts_dir = epic_dir / "artifacts"
-                        epic_name = epic_dir.name
-
-                        # Collect all ticket markdown files
-                        ticket_file_paths = list(tickets_dir.glob("*.md"))
-
-                        # Read reviewer_session_id from review artifact
-                        # frontmatter
-                        review_content = Path(review_artifact).read_text()
-                        # Use builder session if not in frontmatter
-                        reviewer_session_id = session_id
-                        frontmatter_match = re.match(
-                            r"^---\n(.*?)\n---\n", review_content, re.DOTALL
-                        )
-                        if frontmatter_match:
-                            frontmatter = frontmatter_match.group(1)
-                            reviewer_match = re.search(
-                                r"reviewer_session_id:\s*(\S+)", frontmatter
+                    if force or not feedback_applied:
+                        if force and feedback_applied:
+                            console.print(
+                                "[yellow]⚠ --force flag: Re-applying review feedback[/yellow]"
                             )
-                            if reviewer_match:
-                                reviewer_session_id = reviewer_match.group(1)
 
-                        # Create ReviewTargets for epic-review
-                        targets = ReviewTargets(
-                            primary_file=epic_file_path,
-                            additional_files=ticket_file_paths,
-                            editable_directories=[epic_dir, tickets_dir],
-                            artifacts_dir=artifacts_dir,
-                            updates_doc_name="epic-review-updates.md",
-                            log_file_name="epic-review.log",
-                            error_file_name="epic-review.error.log",
-                            epic_name=epic_name,
-                            reviewer_session_id=reviewer_session_id,
-                            review_type="epic"
-                        )
+                        # Apply review feedback to epic and tickets
+                        try:
+                            epic_dir = epic_file_path.parent
+                            tickets_dir = epic_dir / "tickets"
+                            artifacts_dir = epic_dir / "artifacts"
+                            epic_name = epic_dir.name
 
-                        # Apply review feedback
-                        apply_review_feedback(
-                            review_artifact_path=Path(review_artifact),
-                            builder_session_id=session_id,
-                            context=context,
-                            targets=targets,
-                            console=console
-                        )
-                    except Exception as e:
-                        # Review feedback is optional - log warning but
-                        # don't fail command
+                            # Collect all ticket markdown files
+                            ticket_file_paths = list(tickets_dir.glob("*.md"))
+
+                            # Read reviewer_session_id from review artifact
+                            # frontmatter
+                            review_content = Path(review_artifact).read_text()
+                            # Use builder session if not in frontmatter
+                            reviewer_session_id = session_id if session_id else "unknown"
+                            frontmatter_match = re.match(
+                                r"^---\n(.*?)\n---\n", review_content, re.DOTALL
+                            )
+                            if frontmatter_match:
+                                frontmatter = frontmatter_match.group(1)
+                                reviewer_match = re.search(
+                                    r"reviewer_session_id:\s*(\S+)", frontmatter
+                                )
+                                if reviewer_match:
+                                    reviewer_session_id = reviewer_match.group(1)
+
+                            # Create ReviewTargets for epic-review
+                            targets = ReviewTargets(
+                                primary_file=epic_file_path,
+                                additional_files=ticket_file_paths,
+                                editable_directories=[epic_dir, tickets_dir],
+                                artifacts_dir=artifacts_dir,
+                                updates_doc_name="epic-review-updates.md",
+                                log_file_name="epic-review.log",
+                                error_file_name="epic-review.error.log",
+                                epic_name=epic_name,
+                                reviewer_session_id=reviewer_session_id,
+                                review_type="epic"
+                            )
+
+                            # Apply review feedback
+                            apply_review_feedback(
+                                review_artifact_path=Path(review_artifact),
+                                builder_session_id=session_id if session_id else "unknown",
+                                context=context,
+                                targets=targets,
+                                console=console
+                            )
+                        except Exception as e:
+                            # Review feedback is optional - log warning but
+                            # don't fail command
+                            console.print(
+                                f"[yellow]Warning: Failed to apply review "
+                                f"feedback: {e}[/yellow]"
+                            )
+                            # Continue with command execution
+                    else:
                         console.print(
-                            f"[yellow]Warning: Failed to apply review "
-                            f"feedback: {e}[/yellow]"
+                            "[green]✓ Review feedback already applied (skipping)[/green]"
                         )
-                        # Continue with command execution
             except Exception as e:
                 console.print(
                     f"[yellow]Warning: Could not complete epic review: "

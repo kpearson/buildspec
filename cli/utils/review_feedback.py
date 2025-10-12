@@ -802,7 +802,7 @@ def apply_review_feedback(
                     [
                         "claude",
                         "--dangerously-skip-permissions",
-                        "--session-id",
+                        "--resume",
                         builder_session_id,
                     ],
                     input=feedback_prompt,
