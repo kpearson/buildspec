@@ -204,7 +204,7 @@ class EpicStateMachine:
         Returns:
             List of tickets ready to execute, sorted by priority
         """
-        from cli.epic.test_gates import DependenciesMetGate
+        from cli.epic.gates import DependenciesMetGate
 
         ready_tickets = []
 

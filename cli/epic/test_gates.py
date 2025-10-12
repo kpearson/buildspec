@@ -114,29 +114,41 @@ class CreateBranchGate:
 
 
 class LLMStartGate:
-    """Mock gate that enforces synchronous execution."""
+    """Gate that enforces synchronous execution.
+
+    This gate ensures only one Claude builder runs at a time by checking
+    if any other tickets are currently in IN_PROGRESS or AWAITING_VALIDATION
+    state. This prevents concurrent state updates and git conflicts.
+    """
 
     def check(self, ticket: Ticket, context: EpicContext) -> GateResult:
-        """Check if no other tickets are active.
+        """Check if no other tickets are active and branch exists.
 
         Args:
             ticket: Ticket to start
             context: Epic context
 
         Returns:
-            GateResult with passed=True if no active tickets
+            GateResult with passed=True if no active tickets and branch exists,
+            passed=False otherwise with descriptive reason
         """
+        # Count active tickets (IN_PROGRESS or AWAITING_VALIDATION)
         active_states = {TicketState.IN_PROGRESS, TicketState.AWAITING_VALIDATION}
+        active_count = 0
 
         for other_ticket in context.tickets.values():
             if other_ticket.id == ticket.id:
                 continue
 
             if other_ticket.state in active_states:
-                return GateResult(
-                    passed=False,
-                    reason=f"Another ticket is active: {other_ticket.id} ({other_ticket.state.value})",
-                )
+                active_count += 1
+
+        # Block if any tickets are active (enforcing synchronous execution)
+        if active_count >= 1:
+            return GateResult(
+                passed=False,
+                reason="Another ticket in progress (synchronous execution only)",
+            )
 
         # Verify ticket branch exists on remote
         if ticket.git_info and ticket.git_info.branch_name:

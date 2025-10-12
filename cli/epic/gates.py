@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from cli.epic.git_operations import GitOperations
-from cli.epic.models import GateResult, Ticket
+from cli.epic.models import GateResult, Ticket, TicketState
 
 
 class TransitionGate(Protocol):
@@ -103,3 +103,161 @@ class EpicContext:
     tickets: dict[str, Ticket]
     git: GitOperations
     epic_config: dict[str, Any]
+
+
+class DependenciesMetGate:
+    """Gate that validates all ticket dependencies are completed.
+
+    This gate checks that all dependencies in a ticket's depends_on list have
+    state=COMPLETED before allowing the ticket to proceed. It enforces strict
+    dependency ordering and prevents tickets from starting prematurely.
+
+    The gate is used by the state machine when checking if PENDING tickets can
+    transition to READY in the _get_ready_tickets method.
+
+    Acceptance criteria checked:
+        - All dependencies in ticket.depends_on list are verified
+        - Returns passed=True only if ALL dependencies have state=COMPLETED
+        - Returns passed=False with clear reason identifying first unmet dependency
+        - Handles empty depends_on list correctly (returns passed=True)
+        - Does not allow dependencies in FAILED or BLOCKED state to pass
+    """
+
+    def check(self, ticket: Ticket, context: EpicContext) -> GateResult:
+        """Check if all dependencies are completed.
+
+        Args:
+            ticket: Ticket to check dependencies for
+            context: Epic context containing all tickets
+
+        Returns:
+            GateResult with passed=True if all dependencies completed,
+            passed=False with reason identifying first unmet dependency
+        """
+        # Empty dependency list is valid - ticket has no dependencies
+        if not ticket.depends_on:
+            return GateResult(passed=True, reason="No dependencies")
+
+        # Check each dependency
+        for dep_id in ticket.depends_on:
+            # Verify dependency exists in tickets
+            if dep_id not in context.tickets:
+                return GateResult(
+                    passed=False,
+                    reason=f"Dependency {dep_id} not found in tickets",
+                )
+
+            dep_ticket = context.tickets[dep_id]
+
+            # Only COMPLETED state is acceptable for dependencies
+            # FAILED, BLOCKED, or any incomplete state must fail
+            if dep_ticket.state != TicketState.COMPLETED:
+                return GateResult(
+                    passed=False,
+                    reason=f"Dependency {dep_id} not completed (state: {dep_ticket.state.value})",
+                )
+
+        # All dependencies are completed
+        return GateResult(passed=True, reason="All dependencies completed")
+
+
+class CreateBranchGate:
+    """Gate that creates stacked git branches from deterministically calculated base commits.
+
+    This gate implements the stacked branch strategy for the epic state machine:
+    - First ticket (no dependencies) branches from epic baseline commit
+    - Tickets with single dependency branch from that dependency's final commit (true stacking)
+    - Tickets with multiple dependencies branch from most recent dependency final commit
+
+    The gate creates the branch using GitOperations, pushes it to remote, and returns
+    branch information in the GateResult metadata.
+
+    Acceptance criteria checked:
+        - First ticket (no dependencies) branches from epic baseline commit
+        - Tickets with single dependency branch from that dependency's final commit
+        - Tickets with multiple dependencies branch from most recent dependency final commit
+        - Branch created with name format "ticket/{ticket-id}"
+        - Branch pushed to remote
+        - Returns branch info in GateResult metadata
+        - Raises error if dependency missing final_commit
+    """
+
+    def check(self, ticket: Ticket, context: EpicContext) -> GateResult:
+        """Create stacked branch from correct base commit.
+
+        This method calculates the appropriate base commit using _calculate_base_commit,
+        creates the branch with format "ticket/{ticket-id}", pushes it to remote,
+        and returns success with branch metadata.
+
+        Args:
+            ticket: Ticket to create branch for
+            context: Epic context with git operations and ticket dependencies
+
+        Returns:
+            GateResult with passed=True and branch info in metadata on success,
+            or passed=False with error reason on failure
+        """
+        try:
+            from cli.epic.git_operations import GitError
+
+            # Calculate base commit using stacked branch strategy
+            base_commit = self._calculate_base_commit(ticket, context)
+
+            # Create branch with standard naming convention
+            branch_name = f"ticket/{ticket.id}"
+            context.git.create_branch(branch_name, base_commit)
+            context.git.push_branch(branch_name)
+
+            return GateResult(
+                passed=True,
+                reason="Branch created successfully",
+                metadata={
+                    "branch_name": branch_name,
+                    "base_commit": base_commit,
+                },
+            )
+        except GitError as e:
+            return GateResult(
+                passed=False,
+                reason=f"Failed to create branch: {e}",
+            )
+
+    def _calculate_base_commit(self, ticket: Ticket, context: EpicContext) -> str:
+        """Calculate base commit for stacked branches using dependency graph.
+
+        Implements the stacked branch strategy:
+        - No dependencies: Branch from epic baseline (first ticket in epic)
+        - Single dependency: Branch from dependency's final commit (true stacking)
+        - Multiple dependencies: Branch from most recent dependency final commit (diamond case)
+
+        Args:
+            ticket: Ticket to calculate base for
+            context: Epic context with baseline commit and dependency tickets
+
+        Returns:
+            Base commit SHA to branch from
+
+        Raises:
+            ValueError: If dependency is missing final_commit (not yet completed)
+        """
+        if not ticket.depends_on:
+            # First ticket branches from epic baseline
+            return context.baseline_commit
+
+        if len(ticket.depends_on) == 1:
+            # Single dependency - branch from its final commit (true stacking)
+            dep_id = ticket.depends_on[0]
+            dep_ticket = context.tickets[dep_id]
+            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
+                raise ValueError(f"Dependency {dep_id} missing final_commit")
+            return dep_ticket.git_info.final_commit
+
+        # Multiple dependencies - find most recent final commit (diamond case)
+        dep_commits = []
+        for dep_id in ticket.depends_on:
+            dep_ticket = context.tickets[dep_id]
+            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
+                raise ValueError(f"Dependency {dep_id} missing final_commit")
+            dep_commits.append(dep_ticket.git_info.final_commit)
+
+        return context.git.find_most_recent_commit(dep_commits)

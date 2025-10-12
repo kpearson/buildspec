@@ -1,7 +1,7 @@
 """Unit tests for gate protocol and context."""
 
 import pytest
-from cli.epic.gates import EpicContext, TransitionGate
+from cli.epic.gates import DependenciesMetGate, EpicContext, TransitionGate
 from cli.epic.git_operations import GitOperations
 from cli.epic.models import GateResult, Ticket, TicketState
 
@@ -459,3 +459,556 @@ class TestTransitionGateProtocol:
         # Change ticket to non-critical
         ticket.critical = False
         assert conditional.check(ticket, context).passed is False
+
+
+class TestDependenciesMetGate:
+    """Comprehensive unit tests for DependenciesMetGate implementation."""
+
+    def test_no_dependencies_passes(self):
+        """Test that tickets with no dependencies pass validation."""
+        gate = DependenciesMetGate()
+        ticket = Ticket(
+            id="ticket-1",
+            path="/path/1",
+            title="Ticket 1",
+            depends_on=[],  # No dependencies
+        )
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        result = gate.check(ticket, context)
+
+        assert result.passed is True
+        assert result.reason == "No dependencies"
+
+    def test_all_dependencies_completed_passes(self):
+        """Test that ticket passes when all dependencies are COMPLETED."""
+        # Create completed dependencies
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+        dep2 = Ticket(
+            id="dep-2",
+            path="/path/dep2",
+            title="Dependency 2",
+            state=TicketState.COMPLETED,
+        )
+        dep3 = Ticket(
+            id="dep-3",
+            path="/path/dep3",
+            title="Dependency 3",
+            state=TicketState.COMPLETED,
+        )
+
+        # Create ticket depending on all three
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-2", "dep-3"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1, "dep-2": dep2, "dep-3": dep3},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is True
+        assert result.reason == "All dependencies completed"
+
+    def test_one_dependency_pending_fails(self):
+        """Test that ticket fails if any dependency is PENDING."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+        dep2 = Ticket(
+            id="dep-2",
+            path="/path/dep2",
+            title="Dependency 2",
+            state=TicketState.PENDING,  # Not completed
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-2"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1, "dep-2": dep2},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-2" in result.reason
+        assert "not completed" in result.reason
+        assert "PENDING" in result.reason
+
+    def test_one_dependency_in_progress_fails(self):
+        """Test that ticket fails if any dependency is IN_PROGRESS."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+        dep2 = Ticket(
+            id="dep-2",
+            path="/path/dep2",
+            title="Dependency 2",
+            state=TicketState.IN_PROGRESS,  # Not completed
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-2"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1, "dep-2": dep2},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-2" in result.reason
+        assert "not completed" in result.reason
+        assert "IN_PROGRESS" in result.reason
+
+    def test_dependency_failed_state_fails(self):
+        """Test that ticket fails if dependency is in FAILED state."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.FAILED,  # Failed state should block
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-1" in result.reason
+        assert "not completed" in result.reason
+        assert "FAILED" in result.reason
+
+    def test_dependency_blocked_state_fails(self):
+        """Test that ticket fails if dependency is in BLOCKED state."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.BLOCKED,  # Blocked state should fail
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-1" in result.reason
+        assert "not completed" in result.reason
+        assert "BLOCKED" in result.reason
+
+    def test_dependency_awaiting_validation_fails(self):
+        """Test that ticket fails if dependency is AWAITING_VALIDATION."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.AWAITING_VALIDATION,  # Not yet completed
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-1" in result.reason
+        assert "not completed" in result.reason
+        assert "AWAITING_VALIDATION" in result.reason
+
+    def test_dependency_not_found_fails(self):
+        """Test that ticket fails if dependency is not in context.tickets."""
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-missing"],  # dep-missing doesn't exist
+        )
+
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},  # dep-missing not in context
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-missing" in result.reason
+        assert "not found" in result.reason
+
+    def test_fails_on_first_unmet_dependency(self):
+        """Test that gate returns failure for the first unmet dependency encountered."""
+        # Create dependencies with various states
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,  # This one is ok
+        )
+        dep2 = Ticket(
+            id="dep-2",
+            path="/path/dep2",
+            title="Dependency 2",
+            state=TicketState.PENDING,  # This should fail first
+        )
+        dep3 = Ticket(
+            id="dep-3",
+            path="/path/dep3",
+            title="Dependency 3",
+            state=TicketState.FAILED,  # This would also fail, but comes after dep-2
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-2", "dep-3"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1, "dep-2": dep2, "dep-3": dep3},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        # Should fail on dep-2 (first unmet dependency in iteration order)
+        assert result.passed is False
+        assert "dep-2" in result.reason
+        assert "PENDING" in result.reason
+
+    def test_single_dependency_completed_passes(self):
+        """Test that ticket with single completed dependency passes."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is True
+        assert result.reason == "All dependencies completed"
+
+    def test_dependency_ready_state_fails(self):
+        """Test that ticket fails if dependency is only READY, not COMPLETED."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.READY,  # Ready but not completed
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-1" in result.reason
+        assert "READY" in result.reason
+
+    def test_dependency_branch_created_state_fails(self):
+        """Test that ticket fails if dependency is BRANCH_CREATED but not completed."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.BRANCH_CREATED,  # Branch created but not completed
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-1" in result.reason
+        assert "BRANCH_CREATED" in result.reason
+
+    def test_multiple_dependencies_one_missing_one_incomplete(self):
+        """Test mixed failure scenarios: missing dependency and incomplete dependency."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1", "dep-2"],  # dep-2 is missing
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},  # dep-2 not in context
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is False
+        assert "dep-2" in result.reason
+        assert "not found" in result.reason
+
+    def test_ticket_with_none_depends_on_passes(self):
+        """Test that ticket with None depends_on (default) passes."""
+        ticket = Ticket(
+            id="ticket-1",
+            path="/path/1",
+            title="Ticket 1",
+            # depends_on not specified, defaults to empty list
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        assert result.passed is True
+        assert result.reason == "No dependencies"
+
+    def test_check_is_deterministic(self):
+        """Test that running check multiple times produces same result."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.PENDING,
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        gate = DependenciesMetGate()
+
+        # Run check multiple times
+        result1 = gate.check(ticket, context)
+        result2 = gate.check(ticket, context)
+        result3 = gate.check(ticket, context)
+
+        # All results should be identical
+        assert result1.passed == result2.passed == result3.passed
+        assert result1.reason == result2.reason == result3.reason
+
+    def test_gate_does_not_modify_state(self):
+        """Test that gate check does not modify ticket or context state."""
+        dep1 = Ticket(
+            id="dep-1",
+            path="/path/dep1",
+            title="Dependency 1",
+            state=TicketState.COMPLETED,
+        )
+
+        ticket = Ticket(
+            id="ticket-main",
+            path="/path/main",
+            title="Main Ticket",
+            depends_on=["dep-1"],
+        )
+
+        context = EpicContext(
+            epic_id="epic",
+            epic_branch="epic/test",
+            baseline_commit="abc123",
+            tickets={"dep-1": dep1},
+            git=GitOperations(),
+            epic_config={},
+        )
+
+        # Capture initial state
+        initial_ticket_state = ticket.state
+        initial_dep_state = dep1.state
+        initial_ticket_count = len(context.tickets)
+
+        gate = DependenciesMetGate()
+        result = gate.check(ticket, context)
+
+        # Verify nothing changed
+        assert ticket.state == initial_ticket_state
+        assert dep1.state == initial_dep_state
+        assert len(context.tickets) == initial_ticket_count
+        assert result.passed is True
