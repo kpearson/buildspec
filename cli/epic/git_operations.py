@@ -219,20 +219,57 @@ class GitOperations:
         if strategy not in ("squash", "no-ff"):
             raise GitError(f"Invalid merge strategy: {strategy}. Use 'squash' or 'no-ff'")
 
-        # Checkout target branch
-        self._run_git_command(["git", "checkout", target])
+        # Get current branch to potentially restore later
+        current_branch_result = self._run_git_command(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], check=False
+        )
+        current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else None
 
-        # Perform merge based on strategy
-        if strategy == "squash":
-            self._run_git_command(["git", "merge", "--squash", source])
-            # Squash merge requires explicit commit
-            self._run_git_command(["git", "commit", "-m", message])
-        else:  # no-ff
-            self._run_git_command(["git", "merge", "--no-ff", "-m", message, source])
+        # Check if there are uncommitted changes
+        status_result = self._run_git_command(["git", "status", "--porcelain"], check=False)
+        has_changes = bool(status_result.stdout.strip())
 
-        # Get the merge commit SHA
-        result = self._run_git_command(["git", "rev-parse", "HEAD"])
-        return result.stdout.strip()
+        # If there are changes to artifact files, reset them before checkout
+        # This handles the case where epic-state.json has been modified
+        if has_changes:
+            # Check if changes are only to .epics directories (artifacts)
+            changes = status_result.stdout.strip().split('\n')
+            artifact_only = all('.epics/' in line and '/artifacts/' in line for line in changes if line)
+
+            if artifact_only:
+                # Reset artifact changes - these are transient state files
+                self._run_git_command(["git", "reset", "--hard"], check=False)
+            else:
+                # Non-artifact changes exist, need to stash
+                self._run_git_command(["git", "stash", "push", "-m", "Temporary stash for merge"])
+                has_changes = True  # Mark that we need to pop later
+
+        try:
+            # Checkout target branch (now safe since we handled working directory)
+            self._run_git_command(["git", "checkout", target])
+
+            # Perform merge based on strategy
+            # Use -X ours strategy to automatically resolve conflicts in favor of target branch
+            # This is important for artifact files like epic-state.json that exist on both branches
+            if strategy == "squash":
+                self._run_git_command(["git", "merge", "--squash", "-X", "ours", source])
+                # Squash merge requires explicit commit
+                self._run_git_command(["git", "commit", "-m", message])
+            else:  # no-ff
+                self._run_git_command(["git", "merge", "--no-ff", "-X", "ours", "-m", message, source])
+
+            # Get the merge commit SHA
+            result = self._run_git_command(["git", "rev-parse", "HEAD"])
+            return result.stdout.strip()
+        finally:
+            # Restore stashed changes if we stashed them
+            if has_changes and status_result.stdout.strip():
+                # Only try to pop if we actually stashed (not just reset)
+                changes = status_result.stdout.strip().split('\n')
+                artifact_only = all('.epics/' in line and '/artifacts/' in line for line in changes if line)
+                if not artifact_only:
+                    # We stashed, so pop
+                    self._run_git_command(["git", "stash", "pop"], check=False)
 
     def delete_branch(self, branch_name: str, remote: bool = False) -> None:
         """Delete a branch locally or remotely.

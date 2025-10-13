@@ -504,6 +504,20 @@ class TestMergeBranch:
     def test_merge_branch_squash(self, mock_run):
         """Test merging with squash strategy."""
         mock_run.side_effect = [
+            # Get current branch
+            subprocess.CompletedProcess(
+                args=["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                returncode=0,
+                stdout="feature\n",
+                stderr="",
+            ),
+            # Check status
+            subprocess.CompletedProcess(
+                args=["git", "status", "--porcelain"],
+                returncode=0,
+                stdout="",  # No changes
+                stderr="",
+            ),
             # Checkout target
             subprocess.CompletedProcess(
                 args=["git", "checkout", "main"],
@@ -513,7 +527,7 @@ class TestMergeBranch:
             ),
             # Merge squash
             subprocess.CompletedProcess(
-                args=["git", "merge", "--squash", "feature"],
+                args=["git", "merge", "--squash", "-X", "ours", "feature"],
                 returncode=0,
                 stdout="",
                 stderr="",
@@ -538,12 +552,26 @@ class TestMergeBranch:
         result = ops.merge_branch("feature", "main", "squash", "Merge feature")
 
         assert result == "merge123"
-        assert mock_run.call_count == 4
+        assert mock_run.call_count == 6
 
     @patch("subprocess.run")
     def test_merge_branch_no_ff(self, mock_run):
         """Test merging with no-ff strategy."""
         mock_run.side_effect = [
+            # Get current branch
+            subprocess.CompletedProcess(
+                args=["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                returncode=0,
+                stdout="feature\n",
+                stderr="",
+            ),
+            # Check status
+            subprocess.CompletedProcess(
+                args=["git", "status", "--porcelain"],
+                returncode=0,
+                stdout="",  # No changes
+                stderr="",
+            ),
             # Checkout target
             subprocess.CompletedProcess(
                 args=["git", "checkout", "main"],
@@ -553,7 +581,7 @@ class TestMergeBranch:
             ),
             # Merge no-ff
             subprocess.CompletedProcess(
-                args=["git", "merge", "--no-ff", "-m", "Merge feature", "feature"],
+                args=["git", "merge", "--no-ff", "-X", "ours", "-m", "Merge feature", "feature"],
                 returncode=0,
                 stdout="",
                 stderr="",
@@ -571,7 +599,7 @@ class TestMergeBranch:
         result = ops.merge_branch("feature", "main", "no-ff", "Merge feature")
 
         assert result == "merge456"
-        assert mock_run.call_count == 3
+        assert mock_run.call_count == 5
 
     def test_merge_branch_invalid_strategy(self):
         """Test error with invalid merge strategy."""

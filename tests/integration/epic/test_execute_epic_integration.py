@@ -271,10 +271,12 @@ class TestExecuteEpicIntegration:
             os.chdir(repo_path)
 
             # Execute command
-            # Note: With current state machine, when all tickets fail but are non-critical,
-            # the epic finalizes with 0 completed tickets (state = FINALIZED).
-            # The command should still work without raising an error in this case.
-            command(str(epic_file), resume=False)
+            # Note: When all tickets fail (0 completed tickets), the epic should be FAILED
+            # and the command should exit with code 1.
+            with pytest.raises(typer.Exit) as exc_info:
+                command(str(epic_file), resume=False)
+
+            assert exc_info.value.exit_code == 1
 
             # Verify state file
             state_file = epic_file.parent / "artifacts" / "epic-state.json"
@@ -283,8 +285,8 @@ class TestExecuteEpicIntegration:
             with open(state_file, "r") as f:
                 state = json.load(f)
 
-            # Epic finalizes even with 0 completed tickets
-            assert state["epic_state"] == "FINALIZED"
+            # Epic should be FAILED with 0 completed tickets
+            assert state["epic_state"] == "FAILED"
             assert state["tickets"]["fail-ticket"]["state"] == "FAILED"
 
         finally:

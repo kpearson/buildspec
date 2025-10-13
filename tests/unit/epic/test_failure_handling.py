@@ -373,8 +373,8 @@ class TestHandleTicketFailure:
         # Handle failure
         state_machine._handle_ticket_failure(ticket_a)
 
-        # Verify epic state is FAILED
-        assert state_machine.epic_state == EpicState.FAILED
+        # Verify epic state remains EXECUTING (will be determined during finalization)
+        assert state_machine.epic_state == EpicState.EXECUTING
 
     @patch("cli.epic.state_machine.GitOperations")
     def test_handle_failure_non_critical_allows_independent_tickets(

@@ -145,12 +145,10 @@ class EpicStateMachine:
             logger.info(f"Executing ticket: {ticket.id}")
             self._execute_ticket(ticket)
 
-        # Phase 2: Finalize epic (placeholder)
-        if self._all_tickets_completed() and self.epic_state != EpicState.FAILED:
-            logger.info("All tickets completed - finalizing epic")
+        # Phase 2: Finalize epic
+        if self._all_tickets_completed():
+            logger.info("All tickets in terminal state - finalizing epic")
             self._finalize_epic()
-        elif self._all_tickets_completed():
-            logger.warning("All tickets in terminal state but epic already marked FAILED")
         else:
             logger.warning("Not all tickets completed - epic incomplete")
             # Check for failures
@@ -448,9 +446,9 @@ class EpicStateMachine:
                 logger.info(f"Critical ticket {ticket.id} failed - executing rollback")
                 self._execute_rollback()
             else:
-                logger.error(f"Critical ticket {ticket.id} failed - transitioning epic to FAILED")
-                self.epic_state = EpicState.FAILED
-                self._save_state()
+                logger.error(f"Critical ticket {ticket.id} failed - epic will finalize with partial completion")
+                # Note: Don't transition to FAILED here - let finalization happen first
+                # The epic will be marked based on whether any tickets completed
 
     def _find_dependents(self, ticket_id: str) -> list[str]:
         """Find all tickets that depend on the given ticket.
@@ -630,11 +628,11 @@ class EpicStateMachine:
         ]
 
         if not completed_tickets:
-            logger.warning("No completed tickets to merge")
-            self.epic_state = EpicState.FINALIZED
+            logger.warning("No completed tickets to merge - epic failed")
+            self.epic_state = EpicState.FAILED
             self._save_state()
             return {
-                "success": True,
+                "success": False,
                 "epic_branch": self.epic_branch,
                 "merge_commits": [],
                 "pushed": False,

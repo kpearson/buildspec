@@ -823,10 +823,13 @@ class TestFinalizeEpic:
         # Finalize
         result = state_machine._finalize_epic()
 
-        # Should succeed but with empty merge commits
-        assert result["success"] is True
+        # Should fail with 0 completed tickets
+        assert result["success"] is False
         assert len(result["merge_commits"]) == 0
         assert result["pushed"] is False
+
+        # Verify epic state is FAILED
+        assert state_machine.epic_state == EpicState.FAILED
 
         # Verify no git operations called
         mock_git.merge_branch.assert_not_called()

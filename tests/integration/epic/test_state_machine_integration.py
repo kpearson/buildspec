@@ -355,8 +355,8 @@ class TestSimpleEpicExecution:
             assert state_machine.tickets["ticket-c"].state == TicketState.BLOCKED
             assert state_machine.tickets["ticket-c"].blocking_dependency == "ticket-b"
 
-            # Verify epic failed
-            assert state_machine.epic_state == EpicState.FAILED
+            # Verify epic finalized (even with partial failure, finalization happens)
+            assert state_machine.epic_state == EpicState.FINALIZED
 
         finally:
             os.chdir(original_cwd)
