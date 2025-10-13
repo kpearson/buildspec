@@ -3,10 +3,12 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
+import yaml
 from rich.console import Console
+from rich.table import Table
 
 from cli.core.claude import ClaudeRunner
 from cli.core.context import ProjectContext
@@ -126,6 +128,62 @@ def invoke_epic_review(
 
     console.print(f"[green]✓ Review complete: {review_artifact}[/green]")
     return str(review_artifact)
+
+
+def _validate_ticket_filenames(epic_file_path: Path, tickets_dir: Path) -> Tuple[bool, list[dict]]:
+    """Validate that ticket filenames match their IDs in the epic YAML.
+
+    Args:
+        epic_file_path: Path to epic YAML file
+        tickets_dir: Directory where ticket files should exist
+
+    Returns:
+        (is_valid, list_of_mismatches) where each mismatch is a dict with:
+            - ticket_id: Expected ID from epic
+            - expected_file: Expected filename
+            - found_files: List of similar files found (if any)
+    """
+    # Parse epic YAML to get ticket IDs
+    try:
+        with open(epic_file_path, "r") as f:
+            epic_config = yaml.safe_load(f)
+    except Exception as e:
+        logger.error(f"Failed to parse epic YAML: {e}")
+        return False, [{"error": f"Failed to parse epic YAML: {e}"}]
+
+    # Extract ticket IDs (handle both top-level and nested under "epic" key)
+    tickets_data = epic_config.get("tickets")
+    if tickets_data is None and "epic" in epic_config:
+        if isinstance(epic_config["epic"], dict):
+            tickets_data = epic_config["epic"].get("tickets", [])
+
+    if not tickets_data:
+        return True, []  # No tickets to validate
+
+    # Check each ticket
+    mismatches = []
+    for ticket in tickets_data:
+        ticket_id = ticket.get("id")
+        if not ticket_id:
+            continue
+
+        expected_file = tickets_dir / f"{ticket_id}.md"
+
+        if not expected_file.exists():
+            # Look for similar files that might be misnamed
+            similar_files = []
+            for f in tickets_dir.glob("*.md"):
+                # Check if filename contains parts of the ticket ID
+                if any(part in f.stem for part in ticket_id.split("-")):
+                    similar_files.append(f.name)
+
+            mismatches.append({
+                "ticket_id": ticket_id,
+                "expected_file": f"{ticket_id}.md",
+                "found_files": similar_files
+            })
+
+    return len(mismatches) == 0, mismatches
 
 
 def _check_tickets_exist(tickets_dir: Path) -> bool:
@@ -273,6 +331,40 @@ def command(
                 raise typer.Exit(code=exit_code)
 
             console.print("[green]✓ Tickets created[/green]")
+
+            # Validate ticket filenames match epic YAML IDs
+            console.print("\n[blue]🔍 Validating ticket filenames...[/blue]")
+            is_valid, mismatches = _validate_ticket_filenames(epic_file_path, tickets_dir)
+
+            if not is_valid:
+                console.print("[red]✗ Ticket filename validation failed[/red]\n")
+
+                # Create detailed error table
+                table = Table(title="Ticket Filename Mismatches", show_header=True, header_style="bold red")
+                table.add_column("Ticket ID", style="cyan")
+                table.add_column("Expected Filename", style="green")
+                table.add_column("Similar Files Found", style="yellow")
+
+                for mismatch in mismatches:
+                    if "error" in mismatch:
+                        console.print(f"[red]ERROR:[/red] {mismatch['error']}")
+                        continue
+
+                    similar = "\n".join(mismatch["found_files"]) if mismatch["found_files"] else "(none)"
+                    table.add_row(
+                        mismatch["ticket_id"],
+                        mismatch["expected_file"],
+                        similar
+                    )
+
+                console.print(table)
+                console.print("\n[yellow]Fix:[/yellow] Ticket filenames must exactly match their IDs from the epic YAML.")
+                console.print(f"[yellow]Hint:[/yellow] Rename files in {tickets_dir} to match expected filenames.")
+                console.print("[dim]Example: mv ticket-001-data-models.md data-models-1.md[/dim]\n")
+
+                raise typer.Exit(code=1)
+
+            console.print("[green]✓ Ticket filenames validated[/green]")
         else:
             console.print("[green]✓ Tickets exist (skipping creation)[/green]")
             exit_code = 0  # Assume success if tickets already exist
