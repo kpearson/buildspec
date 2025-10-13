@@ -2,6 +2,8 @@
 
 import logging
 import re
+import shutil
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -186,6 +188,30 @@ def _validate_ticket_filenames(epic_file_path: Path, tickets_dir: Path) -> Tuple
     return len(mismatches) == 0, mismatches
 
 
+def _archive_tickets(tickets_dir: Path, artifacts_dir: Path) -> None:
+    """Archive existing tickets directory to artifacts with timestamp.
+
+    Args:
+        tickets_dir: Tickets directory to archive
+        artifacts_dir: Artifacts directory where archive will be placed
+    """
+    if not tickets_dir.exists():
+        return
+
+    # Create artifacts dir if needed
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate archive name with unix timestamp
+    timestamp = int(time.time())
+    archive_name = f"{timestamp}-tickets"
+    archive_path = artifacts_dir / archive_name
+
+    # Move tickets directory to archive
+    shutil.move(str(tickets_dir), str(archive_path))
+    console.print(f"[dim]Archived existing tickets → {archive_path}[/dim]")
+    logger.info(f"Archived tickets directory to {archive_path}")
+
+
 def _check_tickets_exist(tickets_dir: Path) -> bool:
     """Check if ticket markdown files already exist.
 
@@ -301,8 +327,12 @@ def command(
         tickets_dir = output_dir if output_dir else epic_dir / "tickets"
         artifacts_dir = epic_dir / "artifacts"
 
-        # Check for existing tickets (auto-resume detection)
-        tickets_exist = _check_tickets_exist(tickets_dir) and not force
+        # Archive existing tickets if --force flag is set
+        if force and _check_tickets_exist(tickets_dir):
+            _archive_tickets(tickets_dir, artifacts_dir)
+
+        # Check for existing tickets (skip creation if they exist)
+        tickets_exist = _check_tickets_exist(tickets_dir)
 
         if tickets_exist:
             console.print(
@@ -314,12 +344,7 @@ def command(
         session_id = None
         exit_code = None
 
-        if force or not tickets_exist:
-            if force and tickets_exist:
-                console.print(
-                    "[yellow]⚠ --force flag: Rebuilding tickets (existing files will be overwritten)[/yellow]"
-                )
-
+        if not tickets_exist:
             # Print action
             console.print(f"\n[bold]Creating tickets from:[/bold] {epic_file_path}")
 
@@ -379,12 +404,7 @@ def command(
                 )
 
                 review_artifact = None
-                if force or not review_completed:
-                    if force and review_completed:
-                        console.print(
-                            "[yellow]⚠ --force flag: Re-running epic review[/yellow]"
-                        )
-
+                if not review_completed:
                     review_artifact = invoke_epic_review(
                         epic_file_path, session_id, context
                     )
@@ -400,12 +420,7 @@ def command(
                         artifacts_dir, "epic-review-updates.md"
                     )
 
-                    if force or not feedback_applied:
-                        if force and feedback_applied:
-                            console.print(
-                                "[yellow]⚠ --force flag: Re-applying review feedback[/yellow]"
-                            )
-
+                    if not feedback_applied:
                         # Apply review feedback to epic and tickets
                         try:
                             # Use the same tickets_dir that was calculated above
