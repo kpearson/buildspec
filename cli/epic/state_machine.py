@@ -95,7 +95,16 @@ class EpicStateMachine:
 
     def _initialize_tickets(self) -> None:
         """Initialize ticket objects from epic YAML configuration."""
-        tickets_data = self.epic_config.get("tickets", [])
+        # Check for tickets at top level or nested under "epic" key
+        tickets_data = self.epic_config.get("tickets")
+        if tickets_data is None and "epic" in self.epic_config:
+            # Try nested under "epic" key
+            if isinstance(self.epic_config["epic"], dict):
+                tickets_data = self.epic_config["epic"].get("tickets", [])
+            else:
+                tickets_data = []
+        elif tickets_data is None:
+            tickets_data = []
 
         for ticket_data in tickets_data:
             ticket_id = ticket_data["id"]
