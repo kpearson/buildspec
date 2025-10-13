@@ -137,6 +137,23 @@ HEADLESS MODE: Execute autonomously without user interaction.
 - The Task agent will report all created ticket files
 - No interactive prompts or confirmations
 
+CRITICAL FILE NAMING REQUIREMENT:
+Ticket filenames MUST exactly match the ticket ID from the epic YAML.
+- If ticket has id: "data-models-1" → filename MUST be: data-models-1.md
+- If ticket has id: "user-auth-api" → filename MUST be: user-auth-api.md
+- If ticket has id: "implement-validation" → filename MUST be: implement-validation.md
+
+Examples:
+  ✓ CORRECT: data-models-1.md (matches id: "data-models-1")
+  ✓ CORRECT: implement-api.md (matches id: "implement-api")
+  ✗ WRONG: ticket-001-data-models.md (doesn't match id)
+  ✗ WRONG: 001-data-models.md (doesn't match id)
+  ✗ WRONG: data_models_1.md (doesn't match id with underscores)
+
+The filename MUST be exactly: {{ticket-id}}.md where {{ticket-id}} is the "id" field value from the epic YAML.
+DO NOT add prefixes, suffixes, or numbering schemes. Use the exact ID as-is.
+Double-check each filename matches its ticket ID before creating the file!
+
 IMPORTANT: You are the orchestrator. You must delegate to a Task agent using the Task
 tool.
 """
