@@ -42,36 +42,59 @@ def validate_epic_structure(epic_file_path: Path) -> Tuple[bool, Optional[str]]:
     except Exception as e:
         return False, f"Failed to read epic file: {e}"
 
-    # Check for required "tickets" key (can be at top level or nested under "epic")
+    # Determine if using top-level or nested structure
     tickets = None
-    config_location = "at top level"
+    schema_location = None
+    found_keys = list(epic_config.keys())
 
+    # Check top level first
     if "tickets" in epic_config:
         tickets = epic_config.get("tickets")
+        schema_location = "top-level"
+    # Check nested under "epic" key
     elif "epic" in epic_config and isinstance(epic_config["epic"], dict):
-        config_location = "under 'epic:' key"
-        if "tickets" in epic_config["epic"]:
-            tickets = epic_config["epic"].get("tickets")
-        elif "tasks" in epic_config["epic"]:
+        epic_section = epic_config["epic"]
+        if "tickets" in epic_section:
+            tickets = epic_section.get("tickets")
+            schema_location = "nested under 'epic:' key"
+            found_keys = list(epic_section.keys())
+        else:
+            # Missing required field in nested structure
             return False, (
-                "Epic YAML uses 'tasks:' key but should use 'tickets:' key. "
-                "Please rename 'tasks:' to 'tickets:' under the 'epic:' section."
+                f"Required field 'tickets' missing under 'epic:' key. "
+                f"Found keys: {found_keys}"
             )
+    else:
+        # Missing required field at top level
+        return False, (
+            f"Required field 'tickets' missing at top level. "
+            f"Found keys: {found_keys}"
+        )
 
-    if tickets is None:
-        # Check if user used "tasks" instead at top level
-        if "tasks" in epic_config:
-            return False, (
-                "Epic YAML uses 'tasks:' key but should use 'tickets:' key. "
-                "Please rename 'tasks:' to 'tickets:' in the epic file."
-            )
-        return False, f"Epic YAML missing required 'tickets:' key {config_location}"
+    # Validate tickets field type
     if not isinstance(tickets, list):
-        return False, f"Epic 'tickets:' must be a list, got {type(tickets).__name__}"
+        return False, (
+            f"Field 'tickets' must be a list, got {type(tickets).__name__}. "
+            f"Location: {schema_location}"
+        )
 
-    # Check if tickets list is empty
+    # Validate tickets list is not empty
     if len(tickets) == 0:
-        return False, "Epic 'tickets:' list is empty - no tickets to execute"
+        return False, f"Field 'tickets' is empty - no tickets to execute"
+
+    # Validate each ticket has required fields
+    for i, ticket in enumerate(tickets):
+        if not isinstance(ticket, dict):
+            return False, f"Ticket at index {i} must be a dict, got {type(ticket).__name__}"
+
+        # Check required ticket fields
+        required_fields = ["id"]
+        missing = [f for f in required_fields if f not in ticket]
+        if missing:
+            return False, (
+                f"Ticket at index {i} missing required fields: {missing}. "
+                f"Found keys: {list(ticket.keys())}"
+            )
 
     # Check for tickets directory
     tickets_dir = epic_dir / "tickets"

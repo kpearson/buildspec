@@ -309,8 +309,8 @@ class TestValidateEpicStructure:
         assert is_valid is True
         assert error is None
 
-    def test_invalid_tasks_instead_of_tickets_top_level(self, tmp_path):
-        """Should detect 'tasks' used instead of 'tickets' at top level."""
+    def test_invalid_wrong_key_at_top_level(self, tmp_path):
+        """Should report missing required field with found keys."""
         epic_file = tmp_path / "test.epic.yaml"
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
@@ -319,11 +319,11 @@ class TestValidateEpicStructure:
 
         is_valid, error = validate_epic_structure(epic_file)
         assert is_valid is False
-        assert "tasks" in error.lower()
-        assert "tickets" in error.lower()
+        assert "required field 'tickets' missing" in error.lower()
+        assert "tasks" in error  # Should show what was found
 
-    def test_invalid_tasks_instead_of_tickets_nested(self, tmp_path):
-        """Should detect 'tasks' used instead of 'tickets' under 'epic:' key."""
+    def test_invalid_wrong_key_nested(self, tmp_path):
+        """Should report missing required field in nested structure."""
         epic_file = tmp_path / "test.epic.yaml"
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
@@ -332,9 +332,8 @@ class TestValidateEpicStructure:
 
         is_valid, error = validate_epic_structure(epic_file)
         assert is_valid is False
-        assert "tasks" in error.lower()
-        assert "tickets" in error.lower()
-        assert "epic:" in error.lower()
+        assert "required field 'tickets' missing" in error.lower()
+        assert "found keys:" in error.lower()
 
     def test_missing_tickets_key(self, tmp_path):
         """Should detect missing 'tickets' key."""
@@ -346,8 +345,8 @@ class TestValidateEpicStructure:
 
         is_valid, error = validate_epic_structure(epic_file)
         assert is_valid is False
-        assert "tickets" in error.lower()
-        assert "missing" in error.lower()
+        assert "required field 'tickets' missing" in error.lower()
+        assert "found keys:" in error.lower()
 
     def test_missing_tickets_directory(self, tmp_path):
         """Should detect missing tickets directory."""
@@ -401,3 +400,16 @@ class TestValidateEpicStructure:
         is_valid, error = validate_epic_structure(epic_file)
         assert is_valid is False
         assert "yaml" in error.lower() or "syntax" in error.lower()
+
+    def test_ticket_missing_required_field(self, tmp_path):
+        """Should detect when ticket is missing required field like 'id'."""
+        epic_file = tmp_path / "test.epic.yaml"
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        epic_file.write_text("tickets:\n  - title: Test\n    description: Missing id field")
+
+        is_valid, error = validate_epic_structure(epic_file)
+        assert is_valid is False
+        assert "missing required fields" in error.lower()
+        assert "['id']" in error or "id" in error.lower()
