@@ -4,9 +4,10 @@ This module provides the CLI command for executing epics using the state machine
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
+import yaml
 from rich.console import Console
 
 from cli.epic.git_operations import GitError
@@ -19,6 +20,71 @@ class StateTransitionError(Exception):
     """Exception raised when a state transition fails."""
 
     pass
+
+
+def validate_epic_structure(epic_file_path: Path) -> Tuple[bool, Optional[str]]:
+    """Validate epic YAML structure and required files.
+
+    Args:
+        epic_file_path: Path to the epic YAML file
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is None.
+    """
+    epic_dir = epic_file_path.parent
+
+    # Read and parse epic YAML
+    try:
+        with open(epic_file_path, "r") as f:
+            epic_config = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return False, f"Invalid YAML syntax: {e}"
+    except Exception as e:
+        return False, f"Failed to read epic file: {e}"
+
+    # Check for required "tickets" key (can be at top level or nested under "epic")
+    tickets = None
+    config_location = "at top level"
+
+    if "tickets" in epic_config:
+        tickets = epic_config.get("tickets")
+    elif "epic" in epic_config and isinstance(epic_config["epic"], dict):
+        config_location = "under 'epic:' key"
+        if "tickets" in epic_config["epic"]:
+            tickets = epic_config["epic"].get("tickets")
+        elif "tasks" in epic_config["epic"]:
+            return False, (
+                "Epic YAML uses 'tasks:' key but should use 'tickets:' key. "
+                "Please rename 'tasks:' to 'tickets:' under the 'epic:' section."
+            )
+
+    if tickets is None:
+        # Check if user used "tasks" instead at top level
+        if "tasks" in epic_config:
+            return False, (
+                "Epic YAML uses 'tasks:' key but should use 'tickets:' key. "
+                "Please rename 'tasks:' to 'tickets:' in the epic file."
+            )
+        return False, f"Epic YAML missing required 'tickets:' key {config_location}"
+    if not isinstance(tickets, list):
+        return False, f"Epic 'tickets:' must be a list, got {type(tickets).__name__}"
+
+    # Check if tickets list is empty
+    if len(tickets) == 0:
+        return False, "Epic 'tickets:' list is empty - no tickets to execute"
+
+    # Check for tickets directory
+    tickets_dir = epic_dir / "tickets"
+    if not tickets_dir.exists():
+        return False, (
+            f"Tickets directory not found at {tickets_dir}. "
+            "Epic directory must contain a 'tickets/' subdirectory."
+        )
+
+    if not tickets_dir.is_dir():
+        return False, f"Expected 'tickets/' to be a directory but found a file: {tickets_dir}"
+
+    return True, None
 
 
 def command(
@@ -56,6 +122,15 @@ def command(
             )
             console.print(
                 "[yellow]Hint:[/yellow] Epic files should be named like 'my-epic.epic.yaml'"
+            )
+            raise typer.Exit(code=1)
+
+        # Validate epic structure and schema
+        is_valid, error_message = validate_epic_structure(epic_file_path)
+        if not is_valid:
+            console.print(f"[red]ERROR:[/red] Invalid epic structure: {error_message}")
+            console.print(
+                "[yellow]Hint:[/yellow] Check that the epic YAML has a 'tickets:' key and the tickets/ directory exists"
             )
             raise typer.Exit(code=1)
 
