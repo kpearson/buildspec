@@ -3,7 +3,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import typer
 import yaml
@@ -130,7 +130,7 @@ def invoke_epic_review(
     return str(review_artifact)
 
 
-def _validate_ticket_filenames(epic_file_path: Path, tickets_dir: Path) -> Tuple[bool, list[dict]]:
+def _validate_ticket_filenames(epic_file_path: Path, tickets_dir: Path) -> Tuple[bool, List[Dict]]:
     """Validate that ticket filenames match their IDs in the epic YAML.
 
     Args:
