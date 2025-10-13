@@ -238,3 +238,118 @@ class TestArchiveTickets:
         assert (archived_tickets / "ticket-1.md").exists()
         assert (archived_tickets / "notes").is_dir()
         assert (archived_tickets / "notes" / "notes.txt").exists()
+
+    def test_archives_review_artifacts_when_present(self, tmp_path):
+        """Should archive review artifacts along with tickets directory."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        (tickets_dir / "ticket-1.md").write_text("# Ticket")
+
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir()
+
+        # Create review artifacts
+        (artifacts_dir / "epic-review.md").write_text("# Review")
+        (artifacts_dir / "epic-review-updates.md").write_text("""---
+status: completed
+---
+# Updates""")
+        (artifacts_dir / "epic-review.log").write_text("log output")
+        (artifacts_dir / "epic-review.error.log").write_text("error output")
+
+        _archive_tickets(tickets_dir, artifacts_dir)
+
+        # Find archive
+        archives = list(artifacts_dir.glob("*-tickets"))
+        archived_tickets = archives[0]
+
+        # Check review artifacts were moved to archive
+        assert (archived_tickets / "epic-review.md").exists()
+        assert (archived_tickets / "epic-review-updates.md").exists()
+        assert (archived_tickets / "epic-review.log").exists()
+        assert (archived_tickets / "epic-review.error.log").exists()
+
+        # Check artifacts were removed from artifacts_dir
+        assert not (artifacts_dir / "epic-review.md").exists()
+        assert not (artifacts_dir / "epic-review-updates.md").exists()
+        assert not (artifacts_dir / "epic-review.log").exists()
+        assert not (artifacts_dir / "epic-review.error.log").exists()
+
+    def test_handles_missing_review_artifacts_gracefully(self, tmp_path):
+        """Should not fail when review artifacts don't exist."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        (tickets_dir / "ticket-1.md").write_text("# Ticket")
+
+        artifacts_dir = tmp_path / "artifacts"
+        # Don't create any review artifacts
+
+        # Should not raise error
+        _archive_tickets(tickets_dir, artifacts_dir)
+
+        # Archive should still be created with tickets
+        archives = list(artifacts_dir.glob("*-tickets"))
+        assert len(archives) == 1
+        assert (archives[0] / "ticket-1.md").exists()
+
+    def test_archives_only_existing_review_artifacts(self, tmp_path):
+        """Should archive only the review artifacts that exist."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        (tickets_dir / "ticket-1.md").write_text("# Ticket")
+
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir()
+
+        # Create only some review artifacts
+        (artifacts_dir / "epic-review.md").write_text("# Review")
+        (artifacts_dir / "epic-review.log").write_text("log output")
+        # Don't create epic-review-updates.md or epic-review.error.log
+
+        _archive_tickets(tickets_dir, artifacts_dir)
+
+        # Find archive
+        archives = list(artifacts_dir.glob("*-tickets"))
+        archived_tickets = archives[0]
+
+        # Check only existing artifacts were moved
+        assert (archived_tickets / "epic-review.md").exists()
+        assert (archived_tickets / "epic-review.log").exists()
+        assert not (archived_tickets / "epic-review-updates.md").exists()
+        assert not (archived_tickets / "epic-review.error.log").exists()
+
+        # Check artifacts were removed from artifacts_dir
+        assert not (artifacts_dir / "epic-review.md").exists()
+        assert not (artifacts_dir / "epic-review.log").exists()
+
+    def test_preserves_other_artifacts_not_related_to_review(self, tmp_path):
+        """Should not archive artifacts unrelated to review."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        (tickets_dir / "ticket-1.md").write_text("# Ticket")
+
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir()
+
+        # Create review artifacts
+        (artifacts_dir / "epic-review.md").write_text("# Review")
+
+        # Create other artifacts that should NOT be archived
+        (artifacts_dir / "epic-file-review.md").write_text("# File Review")
+        (artifacts_dir / "other-artifact.md").write_text("# Other")
+
+        _archive_tickets(tickets_dir, artifacts_dir)
+
+        # Check other artifacts remain in artifacts_dir
+        assert (artifacts_dir / "epic-file-review.md").exists()
+        assert (artifacts_dir / "other-artifact.md").exists()
+
+        # Check review artifact was moved
+        assert not (artifacts_dir / "epic-review.md").exists()
+
+        # Find archive and verify only epic-review.md was archived
+        archives = list(artifacts_dir.glob("*-tickets"))
+        archived_tickets = archives[0]
+        assert (archived_tickets / "epic-review.md").exists()
+        assert not (archived_tickets / "epic-file-review.md").exists()
+        assert not (archived_tickets / "other-artifact.md").exists()

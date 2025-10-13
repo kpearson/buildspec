@@ -191,6 +191,9 @@ def _validate_ticket_filenames(epic_file_path: Path, tickets_dir: Path) -> Tuple
 def _archive_tickets(tickets_dir: Path, artifacts_dir: Path) -> None:
     """Archive existing tickets directory to artifacts with timestamp.
 
+    Also archives review artifacts to reset completion tracking, ensuring
+    review and revise steps run again for the new tickets.
+
     Args:
         tickets_dir: Tickets directory to archive
         artifacts_dir: Artifacts directory where archive will be placed
@@ -210,6 +213,24 @@ def _archive_tickets(tickets_dir: Path, artifacts_dir: Path) -> None:
     shutil.move(str(tickets_dir), str(archive_path))
     console.print(f"[dim]Archived existing tickets → {archive_path}[/dim]")
     logger.info(f"Archived tickets directory to {archive_path}")
+
+    # Archive review artifacts to reset completion tracking
+    # This ensures review and revise will run again for new tickets
+    review_artifacts = [
+        "epic-review.md",           # Review completion marker
+        "epic-review-updates.md",   # Revise completion marker
+        "epic-review.log",          # Review feedback stdout
+        "epic-review.error.log",    # Review feedback stderr
+    ]
+
+    for artifact_name in review_artifacts:
+        artifact_path = artifacts_dir / artifact_name
+        if artifact_path.exists():
+            archive_artifact_path = archive_path / artifact_name
+            shutil.move(str(artifact_path), str(archive_artifact_path))
+            logger.info(f"Archived review artifact: {artifact_name} → {archive_path}")
+
+    console.print(f"[dim]Archived review artifacts → {archive_path}[/dim]")
 
 
 def _check_tickets_exist(tickets_dir: Path) -> bool:
