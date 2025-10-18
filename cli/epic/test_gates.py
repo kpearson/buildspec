@@ -58,8 +58,8 @@ class CreateBranchGate:
             GateResult with branch info in metadata
         """
         try:
-            # Calculate base commit
-            base_commit = self._calculate_base_commit(ticket, context)
+            # Calculate base commit using shared context method
+            base_commit = context.calculate_base_commit(ticket)
 
             # Create branch
             branch_name = f"ticket/{ticket.id}"
@@ -79,38 +79,6 @@ class CreateBranchGate:
                 passed=False,
                 reason=f"Failed to create branch: {e}",
             )
-
-    def _calculate_base_commit(self, ticket: Ticket, context: EpicContext) -> str:
-        """Calculate base commit for stacked branches.
-
-        Args:
-            ticket: Ticket to calculate base for
-            context: Epic context
-
-        Returns:
-            Base commit SHA
-        """
-        if not ticket.depends_on:
-            # First ticket branches from epic baseline
-            return context.baseline_commit
-
-        if len(ticket.depends_on) == 1:
-            # Single dependency - branch from its final commit
-            dep_id = ticket.depends_on[0]
-            dep_ticket = context.tickets[dep_id]
-            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
-                raise ValueError(f"Dependency {dep_id} missing final_commit")
-            return dep_ticket.git_info.final_commit
-
-        # Multiple dependencies - find most recent
-        dep_commits = []
-        for dep_id in ticket.depends_on:
-            dep_ticket = context.tickets[dep_id]
-            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
-                raise ValueError(f"Dependency {dep_id} missing final_commit")
-            dep_commits.append(dep_ticket.git_info.final_commit)
-
-        return context.git.find_most_recent_commit(dep_commits)
 
 
 class LLMStartGate:

@@ -104,6 +104,45 @@ class EpicContext:
     git: GitOperations
     epic_config: dict[str, Any]
 
+    def calculate_base_commit(self, ticket: Ticket) -> str:
+        """Calculate base commit for stacked branches using dependency graph.
+
+        Implements the stacked branch strategy:
+        - No dependencies: Branch from epic baseline (first ticket in epic)
+        - Single dependency: Branch from dependency's final commit (true stacking)
+        - Multiple dependencies: Branch from most recent dependency final commit (diamond case)
+
+        Args:
+            ticket: Ticket to calculate base for
+
+        Returns:
+            Base commit SHA to branch from
+
+        Raises:
+            ValueError: If dependency is missing final_commit (not yet completed)
+        """
+        if not ticket.depends_on:
+            # First ticket branches from epic baseline
+            return self.baseline_commit
+
+        if len(ticket.depends_on) == 1:
+            # Single dependency - branch from its final commit (true stacking)
+            dep_id = ticket.depends_on[0]
+            dep_ticket = self.tickets[dep_id]
+            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
+                raise ValueError(f"Dependency {dep_id} missing final_commit")
+            return dep_ticket.git_info.final_commit
+
+        # Multiple dependencies - find most recent final commit (diamond case)
+        dep_commits = []
+        for dep_id in ticket.depends_on:
+            dep_ticket = self.tickets[dep_id]
+            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
+                raise ValueError(f"Dependency {dep_id} missing final_commit")
+            dep_commits.append(dep_ticket.git_info.final_commit)
+
+        return self.git.find_most_recent_commit(dep_commits)
+
 
 class DependenciesMetGate:
     """Gate that validates all ticket dependencies are completed.
@@ -185,7 +224,7 @@ class CreateBranchGate:
     def check(self, ticket: Ticket, context: EpicContext) -> GateResult:
         """Create stacked branch from correct base commit.
 
-        This method calculates the appropriate base commit using _calculate_base_commit,
+        This method calculates the appropriate base commit using context.calculate_base_commit,
         creates the branch with format "ticket/{ticket-id}", pushes it to remote,
         and returns success with branch metadata.
 
@@ -201,7 +240,7 @@ class CreateBranchGate:
             from cli.epic.git_operations import GitError
 
             # Calculate base commit using stacked branch strategy
-            base_commit = self._calculate_base_commit(ticket, context)
+            base_commit = context.calculate_base_commit(ticket)
 
             # Create branch with standard naming convention
             branch_name = f"ticket/{ticket.id}"
@@ -227,43 +266,3 @@ class CreateBranchGate:
                 passed=False,
                 reason=f"Failed to create branch: {e}",
             )
-
-    def _calculate_base_commit(self, ticket: Ticket, context: EpicContext) -> str:
-        """Calculate base commit for stacked branches using dependency graph.
-
-        Implements the stacked branch strategy:
-        - No dependencies: Branch from epic baseline (first ticket in epic)
-        - Single dependency: Branch from dependency's final commit (true stacking)
-        - Multiple dependencies: Branch from most recent dependency final commit (diamond case)
-
-        Args:
-            ticket: Ticket to calculate base for
-            context: Epic context with baseline commit and dependency tickets
-
-        Returns:
-            Base commit SHA to branch from
-
-        Raises:
-            ValueError: If dependency is missing final_commit (not yet completed)
-        """
-        if not ticket.depends_on:
-            # First ticket branches from epic baseline
-            return context.baseline_commit
-
-        if len(ticket.depends_on) == 1:
-            # Single dependency - branch from its final commit (true stacking)
-            dep_id = ticket.depends_on[0]
-            dep_ticket = context.tickets[dep_id]
-            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
-                raise ValueError(f"Dependency {dep_id} missing final_commit")
-            return dep_ticket.git_info.final_commit
-
-        # Multiple dependencies - find most recent final commit (diamond case)
-        dep_commits = []
-        for dep_id in ticket.depends_on:
-            dep_ticket = context.tickets[dep_id]
-            if not dep_ticket.git_info or not dep_ticket.git_info.final_commit:
-                raise ValueError(f"Dependency {dep_id} missing final_commit")
-            dep_commits.append(dep_ticket.git_info.final_commit)
-
-        return context.git.find_most_recent_commit(dep_commits)

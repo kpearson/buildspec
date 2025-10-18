@@ -10,7 +10,7 @@ from cli.epic.models import GateResult, GitInfo, Ticket
 
 
 class TestCalculateBaseCommit:
-    """Test _calculate_base_commit method with various dependency graphs."""
+    """Test context.calculate_base_commit method with various dependency graphs."""
 
     def test_no_dependencies_returns_baseline(self):
         """Test that ticket with no dependencies branches from epic baseline."""
@@ -30,7 +30,7 @@ class TestCalculateBaseCommit:
             epic_config={},
         )
 
-        result = gate._calculate_base_commit(ticket, context)
+        result = context.calculate_base_commit(ticket)
 
         assert result == "baseline123"
 
@@ -67,7 +67,7 @@ class TestCalculateBaseCommit:
             epic_config={},
         )
 
-        result = gate._calculate_base_commit(ticket, context)
+        result = context.calculate_base_commit(ticket)
 
         assert result == "dep_final_abc"
 
@@ -104,7 +104,7 @@ class TestCalculateBaseCommit:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            gate._calculate_base_commit(ticket, context)
+            context.calculate_base_commit(ticket)
 
         assert "ticket-1" in str(exc_info.value)
         assert "missing final_commit" in str(exc_info.value)
@@ -138,7 +138,7 @@ class TestCalculateBaseCommit:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            gate._calculate_base_commit(ticket, context)
+            context.calculate_base_commit(ticket)
 
         assert "ticket-1" in str(exc_info.value)
         assert "missing final_commit" in str(exc_info.value)
@@ -195,7 +195,7 @@ class TestCalculateBaseCommit:
             epic_config={},
         )
 
-        result = gate._calculate_base_commit(ticket, context)
+        result = context.calculate_base_commit(ticket)
 
         # Verify it called find_most_recent_commit with both commits
         mock_git.find_most_recent_commit.assert_called_once_with(
@@ -251,7 +251,7 @@ class TestCalculateBaseCommit:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            gate._calculate_base_commit(ticket, context)
+            context.calculate_base_commit(ticket)
 
         assert "ticket-2" in str(exc_info.value)
         assert "missing final_commit" in str(exc_info.value)
@@ -331,19 +331,19 @@ class TestCalculateBaseCommit:
         )
 
         # Test A branches from baseline
-        result_a = gate._calculate_base_commit(ticket_a, context)
+        result_a = context.calculate_base_commit(ticket_a)
         assert result_a == "baseline123"
 
         # Test B branches from A's final
-        result_b = gate._calculate_base_commit(ticket_b, context)
+        result_b = context.calculate_base_commit(ticket_b)
         assert result_b == "commit_a"
 
         # Test C branches from A's final
-        result_c = gate._calculate_base_commit(ticket_c, context)
+        result_c = context.calculate_base_commit(ticket_c)
         assert result_c == "commit_a"
 
         # Test D branches from most recent of B and C
-        result_d = gate._calculate_base_commit(ticket_d, context)
+        result_d = context.calculate_base_commit(ticket_d)
         mock_git.find_most_recent_commit.assert_called_once_with(
             ["commit_b", "commit_c"]
         )
@@ -389,7 +389,7 @@ class TestCalculateBaseCommit:
         # Test each ticket branches from previous final commit
         for i in range(4):
             ticket = tickets[f"ticket-{i}"]
-            result = gate._calculate_base_commit(ticket, context)
+            result = context.calculate_base_commit(ticket)
             expected = commits[i]  # Previous commit in chain
             assert result == expected
 

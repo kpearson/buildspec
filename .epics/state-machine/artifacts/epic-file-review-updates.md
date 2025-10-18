@@ -10,13 +10,14 @@ status: completed
 
 ## Status
 
-Claude did not update the template documentation file as expected.
-This fallback document was automatically created to preserve the
-session output and provide debugging information.
+Claude did not update the template documentation file as expected. This fallback
+document was automatically created to preserve the session output and provide
+debugging information.
 
 ## What Happened
 
-No standard output was captured. The Claude session may have failed to execute or produced no output.
+No standard output was captured. The Claude session may have failed to execute
+or produced no output.
 
 ## Standard Output
 
